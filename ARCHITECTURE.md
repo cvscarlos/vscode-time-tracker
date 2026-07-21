@@ -11,7 +11,7 @@ A VS Code extension that **automatically tracks coding time per project and bran
 Core behaviors the user wants:
 
 - Track automatically, no manual start/stop.
-- Track only the VS Code window currently in focus; pause a window the instant it loses focus (the user runs multiple VS Code windows/projects at once).
+- Track only the VS Code window currently in focus; tolerate a brief look-away (a short focus-loss grace period, §10) without pausing, but pause a window that stays unfocused (the user runs multiple VS Code windows/projects at once).
 - Associate time with the active workspace, Git repository, and branch.
 - **Local-first and fully offline-capable:** never lose time because the server is stopped, restarting, or unreachable — including across a VS Code restart/crash. Buffer to a centralized on-disk outbox; deliver when the server is on; **purge local data after a confirmed successful send.**
 - **Any running window can drain the shared outbox** — even data from a project whose window crashed and is never reopened gets delivered by some other running instance.
@@ -50,11 +50,11 @@ The extension is **deployment-agnostic**: cloud and self-hosted expose the **sam
 - Auth: **personal API token** via `Authorization: Bearer <token>`, `Accept: application/json`. (The first-party desktop app uses OAuth2 PKCE instead — better UX, much more work; a possible future enhancement, not v1.)
 - `GET /api/v1/users/me` → `{ data: { id, name, email, timezone, ... } }`.
 - `GET /api/v1/users/me/memberships` → `{ data: [{ id, organization: { id, name, currency }, role }] }`. **`membership.id` IS the `member_id`** required on every entry — no separate `/members` lookup needed.
-- `GET|POST /api/v1/organizations/{org}/projects` — create body `{ name, color, is_billable, billable_rate?, client_id?, is_public? }`.
+- `GET|POST /api/v1/organizations/{org}/projects` — create body `{ name, color, is_billable, billable_rate?, client_id?, is_public? }`. **`client_id` must be present (nullable — `null` works, no named client needed) and `color` must be lowercase hex** (e.g. `#6c7280`); omitting `client_id` or sending an uppercase hex color → 422.
 - `GET|POST /api/v1/organizations/{org}/tasks` — **org-scoped** (not project-nested); create body `{ name, project_id, estimated_time? }`.
 - `GET /api/v1/organizations/{org}/time-entries` — list (reconciliation; supports `member_id`/date filters).
-- `POST /api/v1/organizations/{org}/time-entries` — body `{ member_id, start, end?, billable, project_id?, task_id?, description?, tags? }`. **No `duration`** — the server derives it from `start`/`end`. `end` omitted = a running entry (not our case; we send finished intervals with both).
-- `PUT /api/v1/organizations/{org}/time-entries/{id}` — update (same optional fields). **No bulk-create endpoint** (single POST per entry; fine at 200 req/min). No server-side idempotency key — we add our own `[vsc:<segmentId>]` description marker + reconciliation (§8).
+- `POST /api/v1/organizations/{org}/time-entries` — body `{ member_id, start, end?, billable, project_id?, task_id?, description?, tags? }` → `{ data: { id, ... } }`. **No `duration`** — the server derives it from `start`/`end`. `end` omitted = a running entry (not our case; we send finished intervals with both). **Dates must be `Y-m-d\TH:i:s\Z` — no milliseconds** (strip the `.000` before sending; a millisecond-bearing date → 422), including the `?start=` filter on the list endpoint above.
+- `PUT /api/v1/organizations/{org}/time-entries/{id}` — update; **accepts a description-only body** (used to retitle a delivered entry to its covering commit, §6 item 10, without touching start/end/project/task). **No bulk-create endpoint** (single POST per entry; fine at 200 req/min). No server-side idempotency key — we add our own `[vsc:<segmentId>]` description marker + reconciliation (§8).
 
 ## 3. Design principles
 
@@ -84,15 +84,18 @@ The extension is two decoupled layers:
 
 ```ts
 interface TimeSyncConnector {
-	resolveOrCreateProject(workspaceKey, name): Promise<projectId>;
-	resolveOrCreateTask(projectId, branch): Promise<taskId>;
-	createEntry(entry): Promise<backendEntryId>;
-	updateEntry(id, entry): Promise<void>;
-	findEntryByMarker(marker, timeRange): Promise<id | null>; // reconciliation
+	resolveMember(): Promise<{ organizationId; memberId }>;
+	findProjectByName(organizationId, name): Promise<projectId | null>;
+	createProject(organizationId, name): Promise<projectId>;
+	findTaskByName(organizationId, projectId, name): Promise<taskId | null>;
+	createTask(organizationId, projectId, name): Promise<taskId>;
+	listEntryMarkers(organizationId, memberId, sinceIso): Promise<Set<segmentId>>; // reconciliation
+	createEntry(organizationId, memberId, entry): Promise<entryId>;
+	updateEntryDescription(organizationId, entryId, description): Promise<void>; // commit-title retitle
 }
 ```
 
-Concrete implementation: `solidtimeConnector` (resolves + caches `member_id`, embeds the idempotency marker per §8). A different server would be a new connector with **no change to Layer 1**.
+Concrete implementation: `SolidtimeConnector` (the REST calls of §2). Project/task lookup-or-create and the resolved-id cache live one layer up, in `syncEngine.ts` + `mappingStore.ts` — the connector itself is a thin, stateless REST client. A different server would be a new connector with **no change to Layer 1**.
 
 ### 5a. Centralized outbox + atomic claim
 
@@ -110,21 +113,22 @@ Concrete implementation: `solidtimeConnector` (resolves + caches `member_id`, em
 | Tasks / debug                          | activity signal              | ✅ pass 1                                     |
 | Terminal interactions                  | activity signal              | ✅ pass 1 (shell-execution / terminal events) |
 | Git branch                             | segment attribution (→ task) | ✅ pass 1                                     |
-| Git commits                            | enrichment (description)     | ⏳ later (deferred)                           |
+| Git commits                            | enrichment (retitle to covering commit) | ✅ pass 4                          |
 | AI interactions                        | classification metadata      | ⏳ later (deferred, opt-in)                   |
 
 ## 6. Decisions locked (brainstorming)
 
 1. **Backend = solidtime.** **v1 targets solidtime Cloud Free ("Solo")**; self-hosted is the documented fallback, reachable by changing only `apiUrl` + token (no code change). See §2.
-2. **First delivery cycle = local tracking core + solidtime sync.** Git commit enrichment (commit messages, per-commit entries) and AI-activity metadata are deferred.
+2. **First delivery cycle = local tracking core + solidtime sync.** Commit-message enrichment shipped in pass 4 as **retitling an already-delivered entry to its covering commit** (see item 10) — per-commit entries (splitting a work block at each commit) and AI-activity metadata remain deferred.
    2a. **Config namespace = `ntTimeTracker.*`.** The `nt` prefix (matching the `nokotata` marketplace publisher) avoids clashing with other extensions; the name is **independent of the sync connector**. Tracker settings live under `ntTimeTracker.tracking.*`; connector settings under their own sub-namespace, e.g. `ntTimeTracker.solidtime.apiUrl` / `ntTimeTracker.solidtime.organizationId`, with the token in `context.secrets` keyed `ntTimeTracker.solidtime.apiToken`. Commands share the `ntTimeTracker.` prefix.
 3. **Multi-window focus: per-window local only.** Each window tracks while focused (`onDidChangeWindowState`), stops on blur. No focus lease file — the OS enforces single-window focus.
 4. **Centralized outbox, any-instance drain — no leader.** All windows share one outbox in `context.globalStorageUri` (already shared per-extension across windows). Any running window may drain and deliver _any_ undelivered segment — so a crashed project's data is delivered by whatever instance is alive. To prevent two windows double-sending the same segment, delivery **atomically claims** a segment before sending (see §5a). No elected leader.
 5. **Storage: centralized non-native outbox (files + index), behind a `Store` interface.** Chosen over SQLite: a native SQLite module (`better-sqlite3`) risks an Electron-ABI mismatch that fails extension activation — the worst "developer disables it" outcome, and the data volume (a few writes/minute) does not need a DB. SQLite (or `node:sqlite` when stable in the VS Code runtime) stays a future swap behind the same interface. **API token in `context.secrets`** (never settings.json); server URL + org id in settings.
-6. **Entry granularity: one entry per contiguous focus-based work block** (exact intervals; short-gap merge deferred to the sync/aggregation layer). No rollups — no quota to protect.
+6. **Entry granularity: aggregated, minute-rounded delivery blocks** (`connectors/aggregate.ts`). Contiguous segments sharing the same project + branch are merged into one block when the gap between them is **≤ 2 min** (`MERGE_GAP_MS`). A block is only built once it has **settled** — the last segment's end is **≥ 5 min** in the past (`SETTLE_MS`) — so still-active work is never delivered mid-flight. The block's start is floored and its end is ceiled to the nearest whole minute; a block that rounds to under 1 minute is dropped. No further rollup beyond this — no quota to protect.
 7. **Offline-first, purge-after-delivery.** Segments persist to the outbox immediately and stay there until solidtime confirms delivery, then are **purged** (they are undelivered work, not an archive). The outbox survives restarts, crashes, server downtime, and no-internet. **Provisioning and sending happen at delivery time (online)** — tracking offline records `workspaceKey`/`branch`, and project/task are resolved/created only when the server is reachable.
-8. **Idempotency:** each segment has a stable UUID; the entry `description` carries a marker `[vsc:<segmentId>]`. On successful create, record delivery and purge locally. On an ambiguous failure (POST may have landed), keep the segment claimed-but-undelivered and, on the next online run, `findEntryByMarker` within the segment's time range before deciding to create — prevents duplicates after a crash.
+8. **Idempotency:** each segment has a stable UUID; the entry `description` carries a marker `[vsc:<segmentId>]`. On successful create, record delivery and purge locally. Before creating any block's entry, the sync engine calls `listEntryMarkers` (lists existing entries since the earliest pending block's start and extracts their `[vsc:…]` markers) and skips creation for any block whose marker is already present — prevents duplicates after a crash or an ambiguous prior send.
 9. **Performance budget.** Checkpoint/write cadence **60 s** (was 30 s); debounce activity signals; do only trivial synchronous work on VS Code event handlers; no heavy or native dependencies; keep activation cost negligible.
+10. **Commit-title enrichment (pass 4).** A delivered block starts out titled with its branch name (item 6). It is later retitled to its **covering commit** — the earliest commit on the same branch at or after the entry's end time — once that commit lands. `tracker/context/gitCommits.ts` watches the VS Code Git extension's `onDidChange` for new HEAD commits, and separately **backfills** commits made while VS Code was closed (e.g. from a terminal) at activation. `connectors/titleStore.ts` persists delivered-but-untitled entries and a rolling per-branch commit log in `globalState`, so retitling survives a restart. Retitling runs (via `updateEntryDescription`, a description-only `PUT`) after every sync, whenever a new commit is observed, and after the activation-time backfill; the `[vsc:<segmentId>]` idempotency marker (§8) is always preserved in the rewritten description. **Re-titling on a later `amend`/rebase is deliberately not implemented** — a commit's hash and message are captured once and the title is set once; if the covering commit is later amended or the branch rebased, the entry keeps its original title.
 
 ## 6a. Consciously rejected (do not re-litigate)
 
@@ -137,7 +141,9 @@ If a real duplication or race is ever observed in practice, revisit; until then,
 
 ## 7. Deferred to later cycles
 
-- Git commit enrichment: commit messages in `description`, split-on-commit, per-commit entries (opt-in).
+- Re-titling on commit `amend`/rebase — a delivered entry's title is set once from its covering commit (§6 item 10) and does not track later history rewrites.
+- OAuth2 (PKCE) authentication — the personal API token is the current and only auth method.
+- Per-commit entries (splitting a work block at each commit) and commit messages beyond the single retitle.
 - AI-vs-human activity metadata (as a `#ai-assisted` tag).
 - Full TreeView reporting panel (first cycle may ship status bar + commands only).
 - Local export (CSV/JSON), diagnostics bundle.
@@ -145,7 +151,7 @@ If a real duplication or race is ever observed in practice, revisit; until then,
 
 ## 8. Open questions
 
-Resolved against Cloud (2026-07-21): task API is org-scoped `GET/POST /organizations/{org}/tasks` with `project_id` in the body; rate limit is 200 req/min; `member_id` resolves via `/organizations/{org}/members` matched on the user id. Remaining, non-blocking design choices for pass 2:
+Resolved against Cloud (2026-07-21): task API is org-scoped `GET/POST /organizations/{org}/tasks` with `project_id` in the body; rate limit is 200 req/min; `member_id` resolves via `GET /users/me/memberships` — that entry's own `id` (no separate `/members` lookup). Remaining, non-blocking design choices for pass 2:
 
 - **Provisioning race mitigation** — search-before-create + atomic mapping cache is enough for a single user (200/min headroom); no file lock needed.
 - **Flush policy** — when to attempt sync (segment finalize, focus loss, every N minutes, on server-back-online). No quota pressure; just avoid needless chatter.
@@ -156,15 +162,19 @@ Resolved against Cloud (2026-07-21): task API is org-scoped `GET/POST /organizat
 
 ```text
 src/
-  extension.ts
+  extension.ts          # wiring, constants (tick/checkpoint/sync/settle/merge-gap), commands
   tracker/              # LAYER 1 — backend-agnostic
     activity/           # activityCollector, sessionStateMachine, focusController
-    context/            # workspaceResolver, gitProvider (branch; commits later); terminal source
+    context/            # workspaceResolver, gitProvider (branch), gitCommits (commit watch + backfill)
     storage/            # store.ts (Store interface), fileOutboxStore, recovery, compaction
+    types.ts
   connectors/           # LAYER 2 — sync connectors
     connector.ts        # TimeSyncConnector interface
-    syncEngine.ts       # drains + claims from the outbox, delivers, marks delivered
-    solidtime/          # solidtimeConnector, entityProvisioner, descriptionBuilder, mappingStore
+    aggregate.ts         # merge + settle + minute-round undelivered segments into delivery blocks
+    syncEngine.ts        # drains + claims from the outbox, delivers blocks, marks delivered
+    mappingStore.ts       # cached project/task ids per workspace+branch
+    titleStore.ts         # delivered-but-untitled entries + commit log; covering-commit retitling
+    solidtime/            # solidtimeConnector — the concrete REST client
   ui/                   # statusBar (health indicator only: liveness + pending count + sync-error), commands
   configuration/        # settings, secrets
 ```
@@ -173,17 +183,17 @@ The status bar is a **health indicator only** — a liveness dot (tracking / pau
 
 ## 10. Activity state machine
 
-States: `Disabled`, `PausedManually`, `Unfocused`, `FocusedIdle`, `Tracking`, `Syncing`.
+States (`currentStatus()`): `disabled`, `paused`, `unfocused`, `idle`, `tracking`. (There is no separate "syncing" state — delivery health is reported by the status bar, not the tracking state machine; see the module layout in §9.)
 
 Key transitions:
 
-- Window gains focus → `FocusedIdle`; qualifying activity (edit/cursor/save/task/debug) → `Tracking`.
-- No qualifying activity for idle timeout → close segment, `FocusedIdle`.
-- Window loses focus → close segment immediately (after a small focus-loss grace to avoid flicker), `Unfocused`.
+- Window gains focus → `idle`; qualifying activity (edit/cursor/save/task/debug) → `tracking` (opens a segment).
+- No qualifying activity for the idle timeout → close segment, back to `idle`.
+- Window loses focus → the open segment is **not** closed immediately. Status stays `tracking` for up to the **focus-loss tolerance** (default 25s, `focusLossToleranceSeconds`) so a brief look-away (checking a second monitor, a quick app switch) doesn't fragment the segment. If focus isn't regained before the tolerance elapses, the segment closes and status becomes `unfocused`.
 - Workspace/repo/branch change → close current segment; new context resolves a new task lazily at sync time.
 - Shutdown → persist current segment synchronously to the journal.
 
-Default timings (tunable): idle timeout 120s, focus-loss grace 250ms, minimum segment 20s, **checkpoint/write cadence 60s** (performance budget, §3). Short-gap merge is deferred to the sync/aggregation layer.
+Default tracking timings (tunable via `ntTimeTracker.tracking.*`): idle timeout **120s**, focus-loss tolerance **25s**, minimum segment **20s**, checkpoint/write cadence **60s** (performance budget, §3). Delivery-side timings (§6 item 6, not user-configurable): settle delay **5 min**, merge gap **2 min**, sync attempt every **3 min**.
 
 ## 11. Identity & mapping
 
