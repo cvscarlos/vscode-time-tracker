@@ -2,6 +2,10 @@ import * as crypto from 'node:crypto';
 import path from 'node:path';
 import * as vscode from 'vscode';
 import { getToken, setToken } from './configuration/secrets';
+import { getSolidtimeConfig } from './configuration/settings';
+import { MappingStore } from './connectors/mappingStore';
+import { SolidtimeConnector } from './connectors/solidtime/solidtimeConnector';
+import { SyncEngine } from './connectors/syncEngine';
 import { watchActivity } from './tracker/activity/activityCollector';
 import { watchFocus } from './tracker/activity/focusController';
 import { SegmentSink, SessionStateMachine } from './tracker/activity/sessionStateMachine';
@@ -13,6 +17,7 @@ import { StatusBar } from './ui/statusBar';
 
 const TICK_MS = 5000;
 const CHECKPOINT_MS = 60_000;
+const SYNC_MS = 3 * 60_000;
 
 let machine: SessionStateMachine | undefined;
 
@@ -33,6 +38,34 @@ export function activate(context: vscode.ExtensionContext): void {
 	// Outbox growth between activations is bounded by pass-2 delivery/compaction.
 	let pendingCount = store.listUndelivered().length;
 	statusBar.setPending(pendingCount);
+
+	const mappings = new MappingStore(context.globalState);
+	const runSync = async () => {
+		const token = await getToken(context);
+		if (!token) {
+			statusBar.setSyncError(false);
+			return; // no token yet — track locally, deliver once a token is set
+		}
+		const cfg = getSolidtimeConfig();
+		const connector = new SolidtimeConnector(cfg.apiUrl, token, cfg.organizationId);
+		const engine = new SyncEngine({
+			store,
+			connector,
+			mappings,
+			projectNameFor: (s) => s.projectName,
+			// eslint-disable-next-line unicorn/no-null -- SyncEngineDeps.taskNameFor contract uses null for "no task"
+			taskNameFor: (s) => s.branch ?? null,
+			log: (m) => output.appendLine(m),
+			onStatus: (pending, error) => {
+				statusBar.setPending(pending);
+				statusBar.setSyncError(error);
+			},
+		});
+		await engine.runOnce();
+	};
+	const syncTimer = setInterval(() => void runSync(), SYNC_MS);
+	context.subscriptions.push({ dispose: () => clearInterval(syncTimer) });
+	void runSync(); // attempt on activation
 
 	const sink: SegmentSink = {
 		onOpen: (record) => store.append(record),
@@ -107,7 +140,8 @@ export function activate(context: vscode.ExtensionContext): void {
 				await setToken(context, token.trim());
 				vscode.window.showInformationMessage('solidtime API token saved.');
 			}
-		})
+		}),
+		vscode.commands.registerCommand('cvsTimeTracker.syncNow', () => void runSync())
 	);
 
 	output.appendLine(`cvs Time Tracker activated (instance ${instanceId})`);

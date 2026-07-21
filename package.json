@@ -36,6 +36,10 @@
 			{
 				"command": "cvsTimeTracker.setApiToken",
 				"title": "cvs Time Tracker: Set solidtime API Token"
+			},
+			{
+				"command": "cvsTimeTracker.syncNow",
+				"title": "cvs Time Tracker: Sync Now"
 			}
 		],
 		"configuration": {
