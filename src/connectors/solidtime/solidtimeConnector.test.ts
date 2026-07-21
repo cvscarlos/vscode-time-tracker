@@ -46,14 +46,19 @@ suite('SolidtimeConnector', () => {
 		assert.equal(await c.findProjectByName('org-1', 'nope'), null);
 	});
 
-	test('createEntry appends the [vsc:id] marker to the description', async () => {
+	test('createEntry appends the [vsc:id] marker to the description and returns the created id', async () => {
 		let sent: any;
 		const f = (async (input: any, init: any) => {
 			sent = JSON.parse(init.body);
-			return { ok: true, status: 201, json: async () => ({}), text: async () => '{}' } as Response;
+			return {
+				ok: true,
+				status: 201,
+				json: async () => ({ data: { id: 'entry-1' } }),
+				text: async () => JSON.stringify({ data: { id: 'entry-1' } }),
+			} as Response;
 		}) as unknown as typeof fetch;
 		const c = new SolidtimeConnector(base, 'tok', 'org-1', f);
-		await c.createEntry('org-1', 'mem-1', {
+		const id = await c.createEntry('org-1', 'mem-1', {
 			segmentId: 'seg-9',
 			start: '2026-07-21T09:00:00.000Z',
 			end: '2026-07-21T09:30:00.000Z',
@@ -62,12 +67,30 @@ suite('SolidtimeConnector', () => {
 			taskId: null,
 			description: 'feature-branch',
 		});
+		assert.equal(id, 'entry-1');
 		assert.ok(sent.description.includes(markerFor('seg-9')));
 		assert.equal(sent.member_id, 'mem-1');
 		assert.equal(sent.duration, undefined); // server derives duration
 		// solidtime requires Y-m-d\TH:i:s\Z (no milliseconds) — else HTTP 422
 		assert.equal(sent.start, '2026-07-21T09:00:00Z');
 		assert.equal(sent.end, '2026-07-21T09:30:00Z');
+	});
+
+	test('updateEntryDescription issues a PUT with only the description field', async () => {
+		let method: string | undefined;
+		let path: string | undefined;
+		let sent: any;
+		const f = (async (input: any, init: any) => {
+			method = init.method;
+			path = new URL(input.toString()).pathname;
+			sent = JSON.parse(init.body);
+			return { ok: true, status: 200, json: async () => ({}), text: async () => '{}' } as Response;
+		}) as unknown as typeof fetch;
+		const c = new SolidtimeConnector(base, 'tok', 'org-1', f);
+		await c.updateEntryDescription('org-1', 'entry-9', 'Fix bug [vsc:seg-9]');
+		assert.equal(method, 'PUT');
+		assert.equal(path, '/api/v1/organizations/org-1/time-entries/entry-9');
+		assert.deepEqual(sent, { description: 'Fix bug [vsc:seg-9]' });
 	});
 
 	test('a 500 throws a retryable ConnectorError; a 401 is not retryable', async () => {

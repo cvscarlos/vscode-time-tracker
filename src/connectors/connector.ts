@@ -18,7 +18,8 @@ export interface TimeSyncConnector {
 		memberId: string,
 		sinceIso: string
 	): Promise<Set<string>>; // set of segmentIds already present
-	createEntry(organizationId: string, memberId: string, entry: EntryInput): Promise<void>;
+	createEntry(organizationId: string, memberId: string, entry: EntryInput): Promise<string>; // returns the created entry id
+	updateEntryDescription(organizationId: string, entryId: string, description: string): Promise<void>;
 }
 
 export class ConnectorError extends Error {

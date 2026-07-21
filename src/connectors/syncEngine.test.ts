@@ -69,7 +69,9 @@ class FakeConnector implements TimeSyncConnector {
 	}
 	async createEntry(_o: string, _m: string, e: EntryInput) {
 		this.created.push(e);
+		return 'entry-' + e.segmentId;
 	}
+	async updateEntryDescription() {}
 }
 
 suite('SyncEngine', () => {

@@ -93,17 +93,31 @@ export class SolidtimeConnector implements TimeSyncConnector {
 		return markers;
 	}
 
-	async createEntry(organizationId: string, memberId: string, entry: EntryInput): Promise<void> {
+	async createEntry(organizationId: string, memberId: string, entry: EntryInput): Promise<string> {
 		const description = `${entry.description} ${markerFor(entry.segmentId)}`.trim();
-		await this.post(`/api/v1/organizations/${organizationId}/time-entries`, {
-			member_id: memberId,
-			start: toSolidtimeDate(entry.start),
-			end: toSolidtimeDate(entry.end),
-			billable: false,
-			project_id: entry.projectId,
-			task_id: entry.taskId,
+		const data = await this.post<{ data: { id: string } }>(
+			`/api/v1/organizations/${organizationId}/time-entries`,
+			{
+				member_id: memberId,
+				start: toSolidtimeDate(entry.start),
+				end: toSolidtimeDate(entry.end),
+				billable: false,
+				project_id: entry.projectId,
+				task_id: entry.taskId,
+				description,
+				tags: [],
+			}
+		);
+		return data.data.id;
+	}
+
+	async updateEntryDescription(
+		organizationId: string,
+		entryId: string,
+		description: string
+	): Promise<void> {
+		await this.request('PUT', `/api/v1/organizations/${organizationId}/time-entries/${entryId}`, {
 			description,
-			tags: [],
 		});
 	}
 
