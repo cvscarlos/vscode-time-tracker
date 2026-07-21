@@ -8,7 +8,7 @@ import { LocalSegment, OpenRecord } from '../types';
 const clock = () => new Date('2026-07-21T10:00:00Z');
 
 function tempDir(): string {
-	return fs.mkdtempSync(path.join(os.tmpdir(), 'cvs-outbox-'));
+	return fs.mkdtempSync(path.join(os.tmpdir(), 'nt-outbox-'));
 }
 
 function seg(id: string, ms: number): LocalSegment {

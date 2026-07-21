@@ -67,7 +67,7 @@ export class SyncEngine {
 		} catch (error) {
 			const authHint =
 				error instanceof ConnectorError && error.status === 401
-					? ' (check your API token: "cvs Time Tracker: Set solidtime API Token")'
+					? ' (check your API token: "nt Time Tracker: Set solidtime API Token")'
 					: '';
 			log(`sync failed: ${String(error)}${authHint}`);
 			onStatus(store.listUndelivered().length, true);

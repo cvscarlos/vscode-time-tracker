@@ -7,15 +7,15 @@ export class MappingStore {
 	constructor(private readonly memento: MementoLike) {}
 
 	getProjectId(workspaceKey: string): string | undefined {
-		return this.memento.get<string>(`cvsmap:project:${workspaceKey}`);
+		return this.memento.get<string>(`ntmap:project:${workspaceKey}`);
 	}
 	setProjectId(workspaceKey: string, id: string): Thenable<void> {
-		return this.memento.update(`cvsmap:project:${workspaceKey}`, id);
+		return this.memento.update(`ntmap:project:${workspaceKey}`, id);
 	}
 	getTaskId(workspaceKey: string, branch: string): string | undefined {
-		return this.memento.get<string>(`cvsmap:task:${workspaceKey}:${branch}`);
+		return this.memento.get<string>(`ntmap:task:${workspaceKey}:${branch}`);
 	}
 	setTaskId(workspaceKey: string, branch: string, id: string): Thenable<void> {
-		return this.memento.update(`cvsmap:task:${workspaceKey}:${branch}`, id);
+		return this.memento.update(`ntmap:task:${workspaceKey}:${branch}`, id);
 	}
 }

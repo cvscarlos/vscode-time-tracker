@@ -6,7 +6,7 @@ export interface SolidtimeConfig {
 }
 
 export function getSolidtimeConfig(): SolidtimeConfig {
-	const config = vscode.workspace.getConfiguration('cvsTimeTracker');
+	const config = vscode.workspace.getConfiguration('ntTimeTracker');
 	const raw = config.get<string>('solidtime.apiUrl', 'https://app.solidtime.io');
 	const apiUrl = raw.replace(/\/api(\/v1)?\/?$/, '').replace(/\/+$/, '');
 	const orgRaw = config.get<string>('solidtime.organizationId', '').trim();

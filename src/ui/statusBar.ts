@@ -18,7 +18,7 @@ export class StatusBar {
 
 	constructor() {
 		this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 3);
-		this.item.command = 'cvsTimeTracker.showOutput';
+		this.item.command = 'ntTimeTracker.showOutput';
 		this.item.show();
 		this.render();
 	}
@@ -51,6 +51,6 @@ export class StatusBar {
 			parts.push('$(warning)');
 		}
 		this.item.text = parts.join(' · ');
-		this.item.tooltip = 'cvs Time Tracker — click for the log';
+		this.item.tooltip = 'nt Time Tracker — click for the log';
 	}
 }

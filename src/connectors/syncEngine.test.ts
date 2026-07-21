@@ -10,7 +10,7 @@ import path from 'node:path';
 
 const clock = () => new Date('2026-07-21T12:00:00Z');
 function tempStore(): FileOutboxStore {
-	return new FileOutboxStore(fs.mkdtempSync(path.join(os.tmpdir(), 'cvs-sync-')), 'w', clock);
+	return new FileOutboxStore(fs.mkdtempSync(path.join(os.tmpdir(), 'nt-sync-')), 'w', clock);
 }
 function memMemento() {
 	const m = new Map<string, unknown>();

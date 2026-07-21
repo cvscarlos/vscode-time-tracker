@@ -22,10 +22,10 @@ const SYNC_MS = 3 * 60_000;
 let machine: SessionStateMachine | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
-	const output = vscode.window.createOutputChannel('cvs Time Tracker');
+	const output = vscode.window.createOutputChannel('nt Time Tracker');
 	context.subscriptions.push(output);
 
-	const config = vscode.workspace.getConfiguration('cvsTimeTracker');
+	const config = vscode.workspace.getConfiguration('ntTimeTracker');
 	const outboxDir = path.join(context.globalStorageUri.fsPath, 'outbox');
 	const instanceId = `${vscode.env.machineId}-${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
 	const store = new FileOutboxStore(outboxDir, instanceId);
@@ -118,16 +118,16 @@ export function activate(context: vscode.ExtensionContext): void {
 
 	context.subscriptions.push(
 		{ dispose: () => clearInterval(timer) },
-		vscode.commands.registerCommand('cvsTimeTracker.showOutput', () => output.show()),
-		vscode.commands.registerCommand('cvsTimeTracker.pause', () => {
+		vscode.commands.registerCommand('ntTimeTracker.showOutput', () => output.show()),
+		vscode.commands.registerCommand('ntTimeTracker.pause', () => {
 			machine?.pause(Date.now());
 			syncStatus();
 		}),
-		vscode.commands.registerCommand('cvsTimeTracker.resume', () => {
+		vscode.commands.registerCommand('ntTimeTracker.resume', () => {
 			machine?.resume(Date.now());
 			syncStatus();
 		}),
-		vscode.commands.registerCommand('cvsTimeTracker.setApiToken', async () => {
+		vscode.commands.registerCommand('ntTimeTracker.setApiToken', async () => {
 			const existing = await getToken(context);
 			const token = await vscode.window.showInputBox({
 				title: 'solidtime API Token',
@@ -141,10 +141,10 @@ export function activate(context: vscode.ExtensionContext): void {
 				vscode.window.showInformationMessage('solidtime API token saved.');
 			}
 		}),
-		vscode.commands.registerCommand('cvsTimeTracker.syncNow', () => void runSync())
+		vscode.commands.registerCommand('ntTimeTracker.syncNow', () => void runSync())
 	);
 
-	output.appendLine(`cvs Time Tracker activated (instance ${instanceId})`);
+	output.appendLine(`nt Time Tracker activated (instance ${instanceId})`);
 }
 
 export function deactivate(): void {

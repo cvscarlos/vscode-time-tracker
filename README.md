@@ -1,4 +1,4 @@
-# cvs Time Tracker
+# nt Time Tracker
 
 Automatic, offline-first coding-time tracking for VS Code — per **project** and **git branch** — that delivers your time to a [solidtime](https://www.solidtime.io) instance (cloud or self-hosted).
 
@@ -15,28 +15,28 @@ It tracks quietly in the background based on **editor focus and activity** (no m
 
 1. Install the extension.
 2. Get a solidtime **API token**: solidtime → Profile Settings → **Create API Token** (shown once).
-3. In VS Code, run **`cvs Time Tracker: Set solidtime API Token`** and paste it. The token is stored in VS Code's encrypted **SecretStorage** (OS keychain) — never in settings or on disk in plaintext.
+3. In VS Code, run **`nt Time Tracker: Set solidtime API Token`** and paste it. The token is stored in VS Code's encrypted **SecretStorage** (OS keychain) — never in settings or on disk in plaintext.
 4. That's it — open a git repo and start coding. Within a few minutes a time entry appears in solidtime under a project named after your repo, with the task set to your branch.
 
-By default it targets **solidtime Cloud** (`https://app.solidtime.io`). To use a self-hosted instance, set `cvsTimeTracker.solidtime.apiUrl`. Nothing else changes.
+By default it targets **solidtime Cloud** (`https://app.solidtime.io`). To use a self-hosted instance, set `ntTimeTracker.solidtime.apiUrl`. Nothing else changes.
 
 ## Settings
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `cvsTimeTracker.enabled` | `true` | Enable tracking. |
-| `cvsTimeTracker.solidtime.apiUrl` | `https://app.solidtime.io` | solidtime base URL (cloud or self-hosted). |
-| `cvsTimeTracker.solidtime.organizationId` | `""` | solidtime organization id; blank uses your first organization. |
-| `cvsTimeTracker.tracking.idleTimeoutSeconds` | `120` | Idle timeout that ends a work interval. |
-| `cvsTimeTracker.tracking.focusLossGraceMilliseconds` | `250` | Grace before a blur counts as focus loss (avoids flicker). |
-| `cvsTimeTracker.tracking.minimumSegmentSeconds` | `20` | Intervals shorter than this are discarded. |
+| `ntTimeTracker.enabled` | `true` | Enable tracking. |
+| `ntTimeTracker.solidtime.apiUrl` | `https://app.solidtime.io` | solidtime base URL (cloud or self-hosted). |
+| `ntTimeTracker.solidtime.organizationId` | `""` | solidtime organization id; blank uses your first organization. |
+| `ntTimeTracker.tracking.idleTimeoutSeconds` | `120` | Idle timeout that ends a work interval. |
+| `ntTimeTracker.tracking.focusLossGraceMilliseconds` | `250` | Grace before a blur counts as focus loss (avoids flicker). |
+| `ntTimeTracker.tracking.minimumSegmentSeconds` | `20` | Intervals shorter than this are discarded. |
 
 ## Commands
 
-- **cvs Time Tracker: Set solidtime API Token**
-- **cvs Time Tracker: Sync Now**
-- **cvs Time Tracker: Pause** / **Resume**
-- **cvs Time Tracker: Show Output**
+- **nt Time Tracker: Set solidtime API Token**
+- **nt Time Tracker: Sync Now**
+- **nt Time Tracker: Pause** / **Resume**
+- **nt Time Tracker: Show Output**
 
 ## Privacy
 

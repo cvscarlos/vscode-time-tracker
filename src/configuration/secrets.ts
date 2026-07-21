@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-export const TOKEN_KEY = 'cvsTimeTracker.solidtime.apiToken';
+export const TOKEN_KEY = 'ntTimeTracker.solidtime.apiToken';
 
 export function getToken(context: vscode.ExtensionContext): Thenable<string | undefined> {
 	return context.secrets.get(TOKEN_KEY);

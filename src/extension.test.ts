@@ -27,15 +27,15 @@ function seg(id: string): LocalSegment {
 suite('activation', () => {
 	test('registers commands', async () => {
 		const commands = await vscode.commands.getCommands(true);
-		assert.ok(commands.includes('cvsTimeTracker.showOutput'));
-		assert.ok(commands.includes('cvsTimeTracker.pause'));
-		assert.ok(commands.includes('cvsTimeTracker.resume'));
+		assert.ok(commands.includes('ntTimeTracker.showOutput'));
+		assert.ok(commands.includes('ntTimeTracker.pause'));
+		assert.ok(commands.includes('ntTimeTracker.resume'));
 	});
 });
 
 suite('outbox integration', () => {
 	test('a fresh instance recovers segments written by other window files', () => {
-		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cvs-int-'));
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nt-int-'));
 		new FileOutboxStore(dir, 'win1', clock).append({ type: 'close', segment: seg('a') });
 		new FileOutboxStore(dir, 'win2', clock).append({
 			type: 'open',

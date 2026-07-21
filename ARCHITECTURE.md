@@ -2,7 +2,7 @@
 
 > Living design notes for the extension. Captures the goal, the decisions made during brainstorming, and the open questions. This is not an implementation plan — it is the reference we build the spec from.
 >
-> **Note on the repo name:** the project is still named `vscode-clockify-time-tracker` for historical reasons, but the chosen backend is **solidtime** (self-hosted), not Clockify. Rename is cosmetic and non-blocking.
+> **Naming:** repo/folder `vscode-time-tracker`; marketplace publisher `nokotata`; config/command namespace `ntTimeTracker.*`. Backend is **solidtime** via a pluggable connector (the earlier "clockify" name is retired).
 
 ## 1. Goal
 
@@ -117,7 +117,7 @@ Concrete implementation: `solidtimeConnector` (resolves + caches `member_id`, em
 
 1. **Backend = solidtime.** **v1 targets solidtime Cloud Free ("Solo")**; self-hosted is the documented fallback, reachable by changing only `apiUrl` + token (no code change). See §2.
 2. **First delivery cycle = local tracking core + solidtime sync.** Git commit enrichment (commit messages, per-commit entries) and AI-activity metadata are deferred.
-   2a. **Config namespace = `cvsTimeTracker.*`.** The short `cvs` prefix avoids clashing with other extensions; the name is **independent of the sync connector**. Tracker settings live under `cvsTimeTracker.tracking.*`; connector settings under their own sub-namespace, e.g. `cvsTimeTracker.solidtime.apiUrl` / `cvsTimeTracker.solidtime.organizationId`, with the token in `context.secrets` keyed `cvsTimeTracker.solidtime.apiToken`. Commands share the `cvsTimeTracker.` prefix. _(Say the word if you'd rather the namespace be plain `cvs.*`.)_
+   2a. **Config namespace = `ntTimeTracker.*`.** The `nt` prefix (matching the `nokotata` marketplace publisher) avoids clashing with other extensions; the name is **independent of the sync connector**. Tracker settings live under `ntTimeTracker.tracking.*`; connector settings under their own sub-namespace, e.g. `ntTimeTracker.solidtime.apiUrl` / `ntTimeTracker.solidtime.organizationId`, with the token in `context.secrets` keyed `ntTimeTracker.solidtime.apiToken`. Commands share the `ntTimeTracker.` prefix.
 3. **Multi-window focus: per-window local only.** Each window tracks while focused (`onDidChangeWindowState`), stops on blur. No focus lease file — the OS enforces single-window focus.
 4. **Centralized outbox, any-instance drain — no leader.** All windows share one outbox in `context.globalStorageUri` (already shared per-extension across windows). Any running window may drain and deliver _any_ undelivered segment — so a crashed project's data is delivered by whatever instance is alive. To prevent two windows double-sending the same segment, delivery **atomically claims** a segment before sending (see §5a). No elected leader.
 5. **Storage: centralized non-native outbox (files + index), behind a `Store` interface.** Chosen over SQLite: a native SQLite module (`better-sqlite3`) risks an Electron-ABI mismatch that fails extension activation — the worst "developer disables it" outcome, and the data volume (a few writes/minute) does not need a DB. SQLite (or `node:sqlite` when stable in the VS Code runtime) stays a future swap behind the same interface. **API token in `context.secrets`** (never settings.json); server URL + org id in settings.

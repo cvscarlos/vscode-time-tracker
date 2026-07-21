@@ -1,13 +1,13 @@
 {
-	"name": "cvs-time-tracker",
-	"displayName": "cvs Time Tracker",
+	"name": "nt-time-tracker",
+	"displayName": "nt Time Tracker",
 	"description": "Automatic, offline-first coding time tracking per project and branch",
 	"version": "0.1.0",
-	"publisher": "cvscarlos",
+	"publisher": "nokotata",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/cvscarlos/vscode-clockify-time-tracker.git"
+		"url": "https://github.com/cvscarlos/vscode-time-tracker.git"
 	},
 	"engines": {
 		"vscode": "^1.105.0"
@@ -22,51 +22,51 @@
 	"contributes": {
 		"commands": [
 			{
-				"command": "cvsTimeTracker.pause",
-				"title": "cvs Time Tracker: Pause"
+				"command": "ntTimeTracker.pause",
+				"title": "nt Time Tracker: Pause"
 			},
 			{
-				"command": "cvsTimeTracker.resume",
-				"title": "cvs Time Tracker: Resume"
+				"command": "ntTimeTracker.resume",
+				"title": "nt Time Tracker: Resume"
 			},
 			{
-				"command": "cvsTimeTracker.showOutput",
-				"title": "cvs Time Tracker: Show Output"
+				"command": "ntTimeTracker.showOutput",
+				"title": "nt Time Tracker: Show Output"
 			},
 			{
-				"command": "cvsTimeTracker.setApiToken",
-				"title": "cvs Time Tracker: Set solidtime API Token"
+				"command": "ntTimeTracker.setApiToken",
+				"title": "nt Time Tracker: Set solidtime API Token"
 			},
 			{
-				"command": "cvsTimeTracker.syncNow",
-				"title": "cvs Time Tracker: Sync Now"
+				"command": "ntTimeTracker.syncNow",
+				"title": "nt Time Tracker: Sync Now"
 			}
 		],
 		"configuration": {
-			"title": "cvs Time Tracker",
+			"title": "nt Time Tracker",
 			"properties": {
-				"cvsTimeTracker.enabled": {
+				"ntTimeTracker.enabled": {
 					"type": "boolean",
 					"default": true
 				},
-				"cvsTimeTracker.tracking.idleTimeoutSeconds": {
+				"ntTimeTracker.tracking.idleTimeoutSeconds": {
 					"type": "number",
 					"default": 120
 				},
-				"cvsTimeTracker.tracking.focusLossGraceMilliseconds": {
+				"ntTimeTracker.tracking.focusLossGraceMilliseconds": {
 					"type": "number",
 					"default": 250
 				},
-				"cvsTimeTracker.tracking.minimumSegmentSeconds": {
+				"ntTimeTracker.tracking.minimumSegmentSeconds": {
 					"type": "number",
 					"default": 20
 				},
-				"cvsTimeTracker.solidtime.apiUrl": {
+				"ntTimeTracker.solidtime.apiUrl": {
 					"type": "string",
 					"default": "https://app.solidtime.io",
 					"description": "solidtime base URL (cloud or self-hosted)."
 				},
-				"cvsTimeTracker.solidtime.organizationId": {
+				"ntTimeTracker.solidtime.organizationId": {
 					"type": "string",
 					"default": "",
 					"description": "solidtime organization id. Leave blank to use your first organization."
