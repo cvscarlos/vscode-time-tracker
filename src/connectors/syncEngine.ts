@@ -1,14 +1,15 @@
+import { aggregate } from './aggregate';
 import { ConnectorError, EntryInput, TimeSyncConnector } from './connector';
 import { MappingStore } from './mappingStore';
 import { Store } from '../tracker/storage/store';
-import { LocalSegment } from '../tracker/types';
 
 export interface SyncEngineDeps {
 	store: Store;
 	connector: TimeSyncConnector;
 	mappings: MappingStore;
-	projectNameFor: (segment: LocalSegment) => string;
-	taskNameFor: (segment: LocalSegment) => string | null;
+	now: () => number;
+	settleMs: number;
+	mergeGapMs: number;
 	log: (message: string) => void;
 	onStatus: (pending: number, error: boolean) => void;
 }
@@ -19,55 +20,71 @@ export class SyncEngine {
 	async runOnce(): Promise<void> {
 		const { store, connector, log, onStatus } = this.deps;
 		const undelivered = store.listUndelivered();
+		const blocks = aggregate(undelivered, {
+			nowMs: this.deps.now(),
+			settleMs: this.deps.settleMs,
+			mergeGapMs: this.deps.mergeGapMs,
+		});
+		log(`sync: ${undelivered.length} undelivered, ${blocks.length} block(s) ready`);
 		onStatus(undelivered.length, false);
-		log(`sync: ${undelivered.length} undelivered segment(s)`);
-		if (undelivered.length === 0) {
-			return;
+		if (blocks.length === 0) {
+			return; // segments held until settled
 		}
 		try {
 			const { organizationId, memberId } = await connector.resolveMember();
-			let since = undelivered[0].start;
-			for (const segment of undelivered) {
-				if (segment.start < since) {
-					since = segment.start;
+			let since = blocks[0].start;
+			for (const block of blocks) {
+				if (block.start < since) {
+					since = block.start;
 				}
 			}
 			const present = await connector.listEntryMarkers(organizationId, memberId, since);
 
-			for (const segment of undelivered) {
-				if (!store.claim(segment.id)) {
+			for (const block of blocks) {
+				const markerId = block.segmentIds[0];
+				if (!store.claim(markerId)) {
 					continue;
 				}
 				// Re-check delivery AFTER claiming: a delivered tombstone does not
-				// block a claim, so another window may have delivered this segment
+				// block a claim, so another window may have delivered this block
 				// between our listUndelivered() snapshot and this claim. Sending
 				// again would create a duplicate.
-				if (store.isDelivered(segment.id)) {
-					continue;
-				}
-				if (present.has(segment.id)) {
-					store.markDelivered(segment.id);
+				if (store.isDelivered(markerId) || present.has(markerId)) {
+					for (const id of block.segmentIds) {
+						store.markDelivered(id);
+					}
 					continue;
 				}
 				try {
-					const projectId = await this.resolveProject(organizationId, segment);
-					const taskId = await this.resolveTask(organizationId, projectId, segment);
+					const projectId = await this.resolveProject(
+						organizationId,
+						block.workspaceKey,
+						block.projectName
+					);
+					const taskId = await this.resolveTask(
+						organizationId,
+						projectId,
+						block.workspaceKey,
+						block.branch
+					);
 					const entry: EntryInput = {
-						segmentId: segment.id,
-						start: segment.start,
-						end: segment.end,
+						segmentId: markerId,
+						start: block.start,
+						end: block.end,
 						projectId,
 						taskId,
-						description: 'VS Code',
+						description: block.branch ?? block.projectName,
 					};
 					await connector.createEntry(organizationId, memberId, entry);
-					store.markDelivered(segment.id);
-					log(`delivered ${segment.projectName} ${segment.branch ?? ''} (${segment.id})`);
+					for (const id of block.segmentIds) {
+						store.markDelivered(id);
+					}
+					log(`delivered ${block.projectName} ${block.branch ?? ''} ${block.start}..${block.end}`);
 				} catch (error) {
 					if (error instanceof ConnectorError && error.retryable) {
 						throw error; // abort run, retry whole thing next tick
 					}
-					log(`skipped ${segment.id}: ${String(error)}`);
+					log(`skipped ${markerId}: ${String(error)}`);
 				}
 			}
 			store.compact();
@@ -82,39 +99,42 @@ export class SyncEngine {
 		}
 	}
 
-	private async resolveProject(organizationId: string, segment: LocalSegment): Promise<string> {
-		const { mappings, connector, projectNameFor } = this.deps;
-		const cached = mappings.getProjectId(segment.workspaceKey);
+	private async resolveProject(
+		organizationId: string,
+		workspaceKey: string,
+		projectName: string
+	): Promise<string> {
+		const { mappings, connector } = this.deps;
+		const cached = mappings.getProjectId(workspaceKey);
 		if (cached) {
 			return cached;
 		}
-		const name = projectNameFor(segment);
 		const found =
-			(await connector.findProjectByName(organizationId, name)) ??
-			(await connector.createProject(organizationId, name));
-		await mappings.setProjectId(segment.workspaceKey, found);
+			(await connector.findProjectByName(organizationId, projectName)) ??
+			(await connector.createProject(organizationId, projectName));
+		await mappings.setProjectId(workspaceKey, found);
 		return found;
 	}
 
 	private async resolveTask(
 		organizationId: string,
 		projectId: string,
-		segment: LocalSegment
+		workspaceKey: string,
+		branch: string | undefined
 	): Promise<string | null> {
-		const { mappings, connector, taskNameFor } = this.deps;
-		const name = taskNameFor(segment);
-		if (!name || !segment.branch) {
+		const { mappings, connector } = this.deps;
+		if (!branch) {
 			// eslint-disable-next-line unicorn/no-null -- EntryInput contract uses null for "no task"
 			return null;
 		}
-		const cached = mappings.getTaskId(segment.workspaceKey, segment.branch);
+		const cached = mappings.getTaskId(workspaceKey, branch);
 		if (cached) {
 			return cached;
 		}
 		const found =
-			(await connector.findTaskByName(organizationId, projectId, name)) ??
-			(await connector.createTask(organizationId, projectId, name));
-		await mappings.setTaskId(segment.workspaceKey, segment.branch, found);
+			(await connector.findTaskByName(organizationId, projectId, branch)) ??
+			(await connector.createTask(organizationId, projectId, branch));
+		await mappings.setTaskId(workspaceKey, branch, found);
 		return found;
 	}
 }

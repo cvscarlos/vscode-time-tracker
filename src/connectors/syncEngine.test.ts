@@ -10,6 +10,12 @@ import * as os from 'node:os';
 import path from 'node:path';
 
 const clock = () => new Date('2026-07-21T12:00:00Z');
+// Fixed "now" used for settlement math: 30+ minutes after the default seeded
+// segment's end, well past SETTLE_MS, so existing tests see settled blocks.
+const NOW_MS = Date.parse('2026-07-21T10:00:00.000Z');
+const SETTLE_MS = 5 * 60_000;
+const MERGE_GAP_MS = 2 * 60_000;
+
 function tempStore(): FileOutboxStore {
 	return new FileOutboxStore(fs.mkdtempSync(path.join(os.tmpdir(), 'nt-sync-')), 'w', clock);
 }
@@ -20,7 +26,7 @@ function memMemento() {
 		update: async (k: string, v: unknown) => void m.set(k, v),
 	};
 }
-function seg(id: string): LocalSegment {
+function seg(id: string, overrides: Partial<LocalSegment> = {}): LocalSegment {
 	return {
 		id,
 		instanceId: 'w',
@@ -31,6 +37,7 @@ function seg(id: string): LocalSegment {
 		projectName: 'proj',
 		branch: 'main',
 		syncState: 'pending',
+		...overrides,
 	};
 }
 
@@ -74,9 +81,9 @@ suite('SyncEngine', () => {
 			store,
 			connector,
 			mappings: new MappingStore(memMemento()),
-			projectNameFor: (s) => s.projectName,
-			// eslint-disable-next-line unicorn/no-null -- SyncEngineDeps.taskNameFor contract uses null for "no task"
-			taskNameFor: (s) => s.branch ?? null,
+			now: () => NOW_MS,
+			settleMs: SETTLE_MS,
+			mergeGapMs: MERGE_GAP_MS,
 			log: () => {},
 			onStatus: () => {},
 		});
@@ -94,9 +101,9 @@ suite('SyncEngine', () => {
 			store,
 			connector,
 			mappings: new MappingStore(memMemento()),
-			projectNameFor: (s) => s.projectName,
-			// eslint-disable-next-line unicorn/no-null -- SyncEngineDeps.taskNameFor contract uses null for "no task"
-			taskNameFor: () => null,
+			now: () => NOW_MS,
+			settleMs: SETTLE_MS,
+			mergeGapMs: MERGE_GAP_MS,
 			log: () => {},
 			onStatus: () => {},
 		});
@@ -128,9 +135,9 @@ suite('SyncEngine', () => {
 			store,
 			connector,
 			mappings: new MappingStore(memMemento()),
-			projectNameFor: (s) => s.projectName,
-			// eslint-disable-next-line unicorn/no-null -- SyncEngineDeps.taskNameFor contract uses null for "no task"
-			taskNameFor: () => null,
+			now: () => NOW_MS,
+			settleMs: SETTLE_MS,
+			mergeGapMs: MERGE_GAP_MS,
 			log: () => {},
 			onStatus: () => {},
 		});
@@ -148,13 +155,63 @@ suite('SyncEngine', () => {
 			store,
 			connector,
 			mappings,
-			projectNameFor: (s) => s.projectName,
-			// eslint-disable-next-line unicorn/no-null -- SyncEngineDeps.taskNameFor contract uses null for "no task"
-			taskNameFor: () => null,
+			now: () => NOW_MS,
+			settleMs: SETTLE_MS,
+			mergeGapMs: MERGE_GAP_MS,
 			log: () => {},
 			onStatus: () => {},
 		});
 		await engine.runOnce();
 		assert.equal(mappings.getProjectId('ws'), 'p-proj');
+	});
+
+	test('merges two contiguous settled segments into one block and delivers a single entry', async () => {
+		const store = tempStore();
+		store.append({
+			type: 'close',
+			segment: seg('m1', { start: '2026-07-21T09:00:00.000Z', end: '2026-07-21T09:10:00.000Z' }),
+		});
+		store.append({
+			type: 'close',
+			segment: seg('m2', { start: '2026-07-21T09:11:00.000Z', end: '2026-07-21T09:20:00.000Z' }),
+		});
+		const connector = new FakeConnector();
+		const engine = new SyncEngine({
+			store,
+			connector,
+			mappings: new MappingStore(memMemento()),
+			now: () => NOW_MS,
+			settleMs: SETTLE_MS,
+			mergeGapMs: MERGE_GAP_MS,
+			log: () => {},
+			onStatus: () => {},
+		});
+		await engine.runOnce();
+		assert.equal(connector.created.length, 1);
+		assert.equal(connector.created[0].segmentId, 'm1');
+		assert.equal(connector.created[0].start, '2026-07-21T09:00:00.000Z');
+		assert.equal(connector.created[0].end, '2026-07-21T09:20:00.000Z');
+		assert.equal(store.listUndelivered().length, 0);
+	});
+
+	test('holds an unsettled segment: no entry created, segment stays undelivered', async () => {
+		const store = tempStore();
+		// Ends only 1 minute before "now" — well inside SETTLE_MS (5 minutes) —
+		// so the block is not yet ready and must be held.
+		store.append({ type: 'close', segment: seg('u1', { end: '2026-07-21T09:59:00.000Z' }) });
+		const connector = new FakeConnector();
+		const engine = new SyncEngine({
+			store,
+			connector,
+			mappings: new MappingStore(memMemento()),
+			now: () => NOW_MS,
+			settleMs: SETTLE_MS,
+			mergeGapMs: MERGE_GAP_MS,
+			log: () => {},
+			onStatus: () => {},
+		});
+		await engine.runOnce();
+		assert.equal(connector.created.length, 0);
+		assert.equal(store.listUndelivered().length, 1);
 	});
 });

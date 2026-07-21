@@ -60,7 +60,7 @@ suite('SolidtimeConnector', () => {
 			projectId: 'p-1',
 			// eslint-disable-next-line unicorn/no-null -- EntryInput contract uses null for "no task"
 			taskId: null,
-			description: 'VS Code',
+			description: 'feature-branch',
 		});
 		assert.ok(sent.description.includes(markerFor('seg-9')));
 		assert.equal(sent.member_id, 'mem-1');

@@ -18,6 +18,8 @@ import { StatusBar } from './ui/statusBar';
 const TICK_MS = 5000;
 const CHECKPOINT_MS = 60_000;
 const SYNC_MS = 3 * 60_000;
+const SETTLE_MS = 5 * 60_000;
+const MERGE_GAP_MS = 2 * 60_000;
 
 let machine: SessionStateMachine | undefined;
 
@@ -55,9 +57,9 @@ export function activate(context: vscode.ExtensionContext): void {
 			store,
 			connector,
 			mappings,
-			projectNameFor: (s) => s.projectName,
-			// eslint-disable-next-line unicorn/no-null -- SyncEngineDeps.taskNameFor contract uses null for "no task"
-			taskNameFor: (s) => s.branch ?? null,
+			now: () => Date.now(),
+			settleMs: SETTLE_MS,
+			mergeGapMs: MERGE_GAP_MS,
 			log: (m) => output.appendLine(m),
 			onStatus: (pending, error) => {
 				// Reconcile the in-memory counter with the authoritative outbox
