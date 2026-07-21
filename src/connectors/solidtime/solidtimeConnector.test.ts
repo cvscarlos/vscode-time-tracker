@@ -65,6 +65,9 @@ suite('SolidtimeConnector', () => {
 		assert.ok(sent.description.includes(markerFor('seg-9')));
 		assert.equal(sent.member_id, 'mem-1');
 		assert.equal(sent.duration, undefined); // server derives duration
+		// solidtime requires Y-m-d\TH:i:s\Z (no milliseconds) — else HTTP 422
+		assert.equal(sent.start, '2026-07-21T09:00:00Z');
+		assert.equal(sent.end, '2026-07-21T09:30:00Z');
 	});
 
 	test('a 500 throws a retryable ConnectorError; a 401 is not retryable', async () => {

@@ -5,6 +5,11 @@ interface Membership {
 	organization: { id: string; name: string };
 }
 
+// solidtime validates dates as Y-m-d\TH:i:s\Z — RFC3339 without milliseconds.
+function toSolidtimeDate(iso: string): string {
+	return new Date(iso).toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
 export class SolidtimeConnector implements TimeSyncConnector {
 	private readonly fetchFn: typeof fetch;
 
@@ -71,7 +76,7 @@ export class SolidtimeConnector implements TimeSyncConnector {
 		sinceIso: string
 	): Promise<Set<string>> {
 		const data = await this.get<{ data: { description?: string }[] }>(
-			`/api/v1/organizations/${organizationId}/time-entries?member_id=${memberId}&start=${encodeURIComponent(sinceIso)}`
+			`/api/v1/organizations/${organizationId}/time-entries?member_id=${memberId}&start=${encodeURIComponent(toSolidtimeDate(sinceIso))}`
 		);
 		const markers = new Set<string>();
 		const re = /\[vsc:([^\]]+)\]/g;
@@ -87,8 +92,8 @@ export class SolidtimeConnector implements TimeSyncConnector {
 		const description = `${entry.description} ${markerFor(entry.segmentId)}`.trim();
 		await this.post(`/api/v1/organizations/${organizationId}/time-entries`, {
 			member_id: memberId,
-			start: entry.start,
-			end: entry.end,
+			start: toSolidtimeDate(entry.start),
+			end: toSolidtimeDate(entry.end),
 			billable: false,
 			project_id: entry.projectId,
 			task_id: entry.taskId,
