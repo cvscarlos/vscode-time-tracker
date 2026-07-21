@@ -17,8 +17,8 @@ export class JournalStore {
 		}
 		const files = fs
 			.readdirSync(directory)
-			.filter((name) => name.startsWith(`${instanceId}-`) && name.endsWith('.jsonl'))
-			.toSorted();
+			.filter((name) => name.startsWith(`${instanceId}-`) && name.endsWith('.jsonl'));
+		files.sort();
 		const records: JournalRecord[] = [];
 		for (const name of files) {
 			records.push(...JournalStore.readFile(path.join(directory, name)));
