@@ -36,7 +36,7 @@ Why, against the alternatives evaluated (Clockify Free, Wakapi, TimeTagger, Kima
 
 The extension is **deployment-agnostic**: cloud and self-hosted expose the **same API and UI**, so the only difference is the `apiUrl` setting and which token is pasted. No code changes to switch.
 
-- **solidtime Cloud — Free "Solo" plan:** 1 user; includes clients/projects/tags/tasks, billable rates, reporting. **API access is available on Free** — tokens are created per-user under Profile Settings → Create API Token, with no plan gating in the pricing or API docs. (Paid "Professional" adds teams, invoicing, PDF/shareable reports, rounding — not API access.) Cloud rate limit is **undocumented**; solidtime is Laravel, whose default API throttle is ~60 req/min — far above our usage. Verify definitively via the `X-RateLimit-*` response headers on a real call.
+- **solidtime Cloud — Free "Solo" plan:** 1 user; includes clients/projects/tags/tasks, billable rates, reporting. **API access is available on Free** — tokens are created per-user under Profile Settings → Create API Token, with no plan gating. (Paid "Professional" adds teams, invoicing, PDF/shareable reports, rounding — not API access.) **Cloud rate limit = 200 req/min** (verified via `x-ratelimit-limit` on a real call) — ~12k/hour, far above our batched usage; no budget machinery needed.
 - **Self-hosted:** no rate limit, full data ownership, works on LAN; costs maintenance + always-on hosting.
 
 **Recommendation:** start on **Cloud Free** (zero infra, validate fast); self-host later if a limit is hit or full data ownership is wanted — a two-setting change. The extension only ever sends project/branch names, timestamps, durations, and (later, opt-in) commit message first lines — never source code or AI prompts.
@@ -52,7 +52,7 @@ The extension is **deployment-agnostic**: cloud and self-hosted expose the **sam
 - `GET /api/v1/users/me/memberships` → organizations.
 - `GET /api/v1/organizations/{org}/members` → resolve **`member_id`** (match on user id). Required on every entry.
 - `GET|POST /api/v1/organizations/{org}/projects` → list / create project.
-- (tasks) create/list under a project — to confirm exact path when writing the spec.
+- `GET|POST /api/v1/organizations/{org}/tasks` → list / create task (**org-scoped**, not project-nested; the task carries `project_id`). Verified against Cloud.
 - `GET /api/v1/organizations/{org}/time-entries?start=&end=` → list (used for reconciliation).
 - `POST /api/v1/organizations/{org}/time-entries` — body `{ member_id, start, end, duration, billable, project_id, task_id?, description, tags[] }`.
 - `PUT /api/v1/organizations/{org}/time-entries/{id}` — update.
@@ -146,8 +146,9 @@ If a real duplication or race is ever observed in practice, revisit; until then,
 
 ## 8. Open questions
 
-- **solidtime task API** — confirm exact create/list task endpoints and whether tasks require any extra fields.
-- **Provisioning race mitigation** — is search-before-create + atomic mapping cache enough, or is a tiny file lock warranted? (Lean: good enough for single user.)
+Resolved against Cloud (2026-07-21): task API is org-scoped `GET/POST /organizations/{org}/tasks` with `project_id` in the body; rate limit is 200 req/min; `member_id` resolves via `/organizations/{org}/members` matched on the user id. Remaining, non-blocking design choices for pass 2:
+
+- **Provisioning race mitigation** — search-before-create + atomic mapping cache is enough for a single user (200/min headroom); no file lock needed.
 - **Flush policy** — when to attempt sync (segment finalize, focus loss, every N minutes, on server-back-online). No quota pressure; just avoid needless chatter.
 - **Server-reachability detection** — cheap probe vs. attempt-and-backoff on the real request.
 - **Project/task naming + slugging** — templates for project name (repo remote → name) and branch→task name (branches with `/`, detached HEAD).
