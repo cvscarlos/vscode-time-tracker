@@ -26,5 +26,7 @@ tmp/**
 docs/**
 ARCHITECTURE.md
 
-# Icon source (ship only the PNG)
+# Icon source + the README/social banner (README loads the banner from a URL;
+# only images/icon.png needs to ship)
 images/*.svg
+images/og-banner.png
