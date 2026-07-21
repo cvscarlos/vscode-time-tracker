@@ -1,3 +1,8 @@
+# Secrets & internal (never ship)
+.env
+.claude/**
+.superpowers/**
+
 # Source & build tooling
 src/**
 out/**/*.test.js
