@@ -75,21 +75,39 @@ class FakeConnector implements TimeSyncConnector {
 	async updateEntryDescription() {}
 }
 
+// Shared construction for the common case: a real FileOutboxStore-backed
+// SyncEngine wired to a FakeConnector, differing only in a few knobs
+// (delivered/onDelivered) that individual tests need. Tests that require a
+// hand-rolled Store (to observe claim/isDelivered timing) build the engine
+// directly with `new SyncEngine(...)` instead of this helper.
+function makeEngine(
+	overrides: {
+		present?: Set<string>;
+		mappings?: MappingStore;
+		onDelivered?: (entryId: string, block: DeliveryBlock) => void;
+	} = {}
+) {
+	const store = tempStore();
+	const connector = new FakeConnector(overrides.present);
+	const mappings = overrides.mappings ?? new MappingStore(memMemento());
+	const engine = new SyncEngine({
+		store,
+		connector,
+		mappings,
+		now: () => NOW_MS,
+		settleMs: SETTLE_MS,
+		mergeGapMs: MERGE_GAP_MS,
+		log: () => {},
+		onStatus: () => {},
+		onDelivered: overrides.onDelivered,
+	});
+	return { engine, store, connector, mappings };
+}
+
 suite('SyncEngine', () => {
 	test('delivers an undelivered segment, provisions project, marks delivered', async () => {
-		const store = tempStore();
+		const { engine, store, connector } = makeEngine();
 		store.append({ type: 'close', segment: seg('a') });
-		const connector = new FakeConnector();
-		const engine = new SyncEngine({
-			store,
-			connector,
-			mappings: new MappingStore(memMemento()),
-			now: () => NOW_MS,
-			settleMs: SETTLE_MS,
-			mergeGapMs: MERGE_GAP_MS,
-			log: () => {},
-			onStatus: () => {},
-		});
 		await engine.runOnce();
 		assert.equal(connector.created.length, 1);
 		assert.equal(connector.created[0].segmentId, 'a');
@@ -97,19 +115,8 @@ suite('SyncEngine', () => {
 	});
 
 	test('does NOT re-create an entry whose marker is already present on the server', async () => {
-		const store = tempStore();
+		const { engine, store, connector } = makeEngine({ present: new Set(['b']) });
 		store.append({ type: 'close', segment: seg('b') });
-		const connector = new FakeConnector(new Set(['b']));
-		const engine = new SyncEngine({
-			store,
-			connector,
-			mappings: new MappingStore(memMemento()),
-			now: () => NOW_MS,
-			settleMs: SETTLE_MS,
-			mergeGapMs: MERGE_GAP_MS,
-			log: () => {},
-			onStatus: () => {},
-		});
 		await engine.runOnce();
 		assert.equal(connector.created.length, 0);
 		assert.equal(store.listUndelivered().length, 0); // marked delivered via reconciliation
@@ -150,26 +157,15 @@ suite('SyncEngine', () => {
 	});
 
 	test('caches a provisioned project id in the mapping store', async () => {
-		const store = tempStore();
-		store.append({ type: 'close', segment: seg('c') });
 		const mappings = new MappingStore(memMemento());
-		const connector = new FakeConnector();
-		const engine = new SyncEngine({
-			store,
-			connector,
-			mappings,
-			now: () => NOW_MS,
-			settleMs: SETTLE_MS,
-			mergeGapMs: MERGE_GAP_MS,
-			log: () => {},
-			onStatus: () => {},
-		});
+		const { engine, store } = makeEngine({ mappings });
+		store.append({ type: 'close', segment: seg('c') });
 		await engine.runOnce();
 		assert.equal(mappings.getProjectId('ws'), 'p-proj');
 	});
 
 	test('merges two contiguous settled segments into one block and delivers a single entry', async () => {
-		const store = tempStore();
+		const { engine, store, connector } = makeEngine();
 		store.append({
 			type: 'close',
 			segment: seg('m1', { start: '2026-07-21T09:00:00.000Z', end: '2026-07-21T09:10:00.000Z' }),
@@ -177,17 +173,6 @@ suite('SyncEngine', () => {
 		store.append({
 			type: 'close',
 			segment: seg('m2', { start: '2026-07-21T09:11:00.000Z', end: '2026-07-21T09:20:00.000Z' }),
-		});
-		const connector = new FakeConnector();
-		const engine = new SyncEngine({
-			store,
-			connector,
-			mappings: new MappingStore(memMemento()),
-			now: () => NOW_MS,
-			settleMs: SETTLE_MS,
-			mergeGapMs: MERGE_GAP_MS,
-			log: () => {},
-			onStatus: () => {},
 		});
 		await engine.runOnce();
 		assert.equal(connector.created.length, 1);
@@ -198,21 +183,11 @@ suite('SyncEngine', () => {
 	});
 
 	test('calls onDelivered with the connector-assigned entry id and the delivered block', async () => {
-		const store = tempStore();
-		store.append({ type: 'close', segment: seg('e') });
-		const connector = new FakeConnector();
 		const delivered: { entryId: string; block: DeliveryBlock }[] = [];
-		const engine = new SyncEngine({
-			store,
-			connector,
-			mappings: new MappingStore(memMemento()),
-			now: () => NOW_MS,
-			settleMs: SETTLE_MS,
-			mergeGapMs: MERGE_GAP_MS,
-			log: () => {},
-			onStatus: () => {},
+		const { engine, store } = makeEngine({
 			onDelivered: (entryId, block) => delivered.push({ entryId, block }),
 		});
+		store.append({ type: 'close', segment: seg('e') });
 		await engine.runOnce();
 		assert.equal(delivered.length, 1);
 		assert.equal(delivered[0].entryId, 'entry-e');
@@ -220,21 +195,10 @@ suite('SyncEngine', () => {
 	});
 
 	test('holds an unsettled segment: no entry created, segment stays undelivered', async () => {
-		const store = tempStore();
+		const { engine, store, connector } = makeEngine();
 		// Ends only 1 minute before "now" — well inside SETTLE_MS (5 minutes) —
 		// so the block is not yet ready and must be held.
 		store.append({ type: 'close', segment: seg('u1', { end: '2026-07-21T09:59:00.000Z' }) });
-		const connector = new FakeConnector();
-		const engine = new SyncEngine({
-			store,
-			connector,
-			mappings: new MappingStore(memMemento()),
-			now: () => NOW_MS,
-			settleMs: SETTLE_MS,
-			mergeGapMs: MERGE_GAP_MS,
-			log: () => {},
-			onStatus: () => {},
-		});
 		await engine.runOnce();
 		assert.equal(connector.created.length, 0);
 		assert.equal(store.listUndelivered().length, 1);

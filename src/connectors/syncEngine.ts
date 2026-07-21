@@ -42,52 +42,7 @@ export class SyncEngine {
 			const present = await connector.listEntryMarkers(organizationId, memberId, since);
 
 			for (const block of blocks) {
-				const markerId = block.segmentIds[0];
-				if (!store.claim(markerId)) {
-					continue;
-				}
-				// Re-check delivery AFTER claiming: a delivered tombstone does not
-				// block a claim, so another window may have delivered this block
-				// between our listUndelivered() snapshot and this claim. Sending
-				// again would create a duplicate.
-				if (store.isDelivered(markerId) || present.has(markerId)) {
-					for (const id of block.segmentIds) {
-						store.markDelivered(id);
-					}
-					continue;
-				}
-				try {
-					const projectId = await this.resolveProject(
-						organizationId,
-						block.workspaceKey,
-						block.projectName
-					);
-					const taskId = await this.resolveTask(
-						organizationId,
-						projectId,
-						block.workspaceKey,
-						block.branch
-					);
-					const entry: EntryInput = {
-						segmentId: markerId,
-						start: block.start,
-						end: block.end,
-						projectId,
-						taskId,
-						description: block.branch ?? block.projectName,
-					};
-					const entryId = await connector.createEntry(organizationId, memberId, entry);
-					this.deps.onDelivered?.(entryId, block);
-					for (const id of block.segmentIds) {
-						store.markDelivered(id);
-					}
-					log(`delivered ${block.projectName} ${block.branch ?? ''} ${block.start}..${block.end}`);
-				} catch (error) {
-					if (error instanceof ConnectorError && error.retryable) {
-						throw error; // abort run, retry whole thing next tick
-					}
-					log(`skipped ${markerId}: ${String(error)}`);
-				}
+				await this.deliverBlock(block, organizationId, memberId, present);
 			}
 			store.compact();
 			onStatus(store.listUndelivered().length, false);
@@ -98,6 +53,61 @@ export class SyncEngine {
 					: '';
 			log(`sync failed: ${String(error)}${authHint}`);
 			onStatus(store.listUndelivered().length, true);
+		}
+	}
+
+	private async deliverBlock(
+		block: DeliveryBlock,
+		organizationId: string,
+		memberId: string,
+		present: Set<string>
+	): Promise<void> {
+		const { store, connector, log } = this.deps;
+		const markerId = block.segmentIds[0];
+		if (!store.claim(markerId)) {
+			return;
+		}
+		// Re-check delivery AFTER claiming: a delivered tombstone does not
+		// block a claim, so another window may have delivered this block
+		// between our listUndelivered() snapshot and this claim. Sending
+		// again would create a duplicate.
+		if (store.isDelivered(markerId) || present.has(markerId)) {
+			for (const id of block.segmentIds) {
+				store.markDelivered(id);
+			}
+			return;
+		}
+		try {
+			const projectId = await this.resolveProject(
+				organizationId,
+				block.workspaceKey,
+				block.projectName
+			);
+			const taskId = await this.resolveTask(
+				organizationId,
+				projectId,
+				block.workspaceKey,
+				block.branch
+			);
+			const entry: EntryInput = {
+				segmentId: markerId,
+				start: block.start,
+				end: block.end,
+				projectId,
+				taskId,
+				description: block.branch ?? block.projectName,
+			};
+			const entryId = await connector.createEntry(organizationId, memberId, entry);
+			this.deps.onDelivered?.(entryId, block);
+			for (const id of block.segmentIds) {
+				store.markDelivered(id);
+			}
+			log(`delivered ${block.projectName} ${block.branch ?? ''} ${block.start}..${block.end}`);
+		} catch (error) {
+			if (error instanceof ConnectorError && error.retryable) {
+				throw error; // abort run, retry whole thing next tick
+			}
+			log(`skipped ${markerId}: ${String(error)}`);
 		}
 	}
 
