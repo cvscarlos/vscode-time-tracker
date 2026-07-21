@@ -1,6 +1,10 @@
-# Time Tracker nt
+<h1 align="center">Time Tracker nt</h1>
 
-Automatic, offline-first coding-time tracking for VS Code — per **project** and **git branch** — that delivers your time to a [solidtime](https://www.solidtime.io) instance (cloud or self-hosted).
+<div align="center">
+  <img alt="Time Tracker nt" src="https://raw.githubusercontent.com/cvscarlos/vscode-time-tracker/main/images/og-banner.png" width="720" />
+</div>
+
+<p align="center">Automatic, offline-first coding-time tracking for VS Code — per <b>project</b> and <b>git branch</b> — that delivers your time to a <a href="https://www.solidtime.io">solidtime</a> instance (cloud or self-hosted).</p>
 
 It tracks quietly in the background based on **editor focus and activity** (no manual start/stop), buffers everything locally so nothing is lost when you're offline or the server is down, and syncs when it can. Performance first: it does minimal work on the editor thread and has no heavy dependencies.
 
