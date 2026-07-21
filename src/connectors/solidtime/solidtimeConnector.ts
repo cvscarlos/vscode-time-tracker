@@ -49,7 +49,8 @@ export class SolidtimeConnector implements TimeSyncConnector {
 	async createProject(organizationId: string, name: string): Promise<string> {
 		const data = await this.post<{ data: { id: string } }>(
 			`/api/v1/organizations/${organizationId}/projects`,
-			{ name, color: '#6c7280', is_billable: false }
+			// eslint-disable-next-line unicorn/no-null -- solidtime requires client_id to be present (nullable)
+			{ name, color: '#6c7280', is_billable: false, client_id: null }
 		);
 		return data.data.id;
 	}
@@ -131,8 +132,11 @@ export class SolidtimeConnector implements TimeSyncConnector {
 		}
 		if (!response.ok) {
 			const retryable = response.status >= 500 || response.status === 429;
+			// Include the response body — solidtime puts the validation reason there
+			// (e.g. "The client id field must be present."), which the status alone hides.
+			const detail = await response.text().catch(() => '');
 			throw new ConnectorError(
-				`solidtime ${method} ${path} -> HTTP ${response.status}`,
+				`solidtime ${method} ${path} -> HTTP ${response.status} ${detail.slice(0, 300)}`.trim(),
 				response.status,
 				retryable
 			);
