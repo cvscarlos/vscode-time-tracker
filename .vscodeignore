@@ -1,6 +1,7 @@
 # Secrets & internal (never ship)
 .env
 .claude/**
+.fallow/**
 .superpowers/**
 
 # Source & build tooling
@@ -24,3 +25,6 @@ tmp/**
 .gitignore
 docs/**
 ARCHITECTURE.md
+
+# Icon source (ship only the PNG)
+images/*.svg

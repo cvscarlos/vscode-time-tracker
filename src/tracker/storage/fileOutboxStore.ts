@@ -9,7 +9,7 @@ const CLAIM_LEASE_MS = 5 * 60 * 1000;
 // treated as crashed/stale and safe to recover.
 const STALE_OPEN_MS = 120_000;
 
-export function reconstructSegments(
+function reconstructSegments(
 	records: JournalRecord[],
 	options?: { now?: number }
 ): LocalSegment[] {

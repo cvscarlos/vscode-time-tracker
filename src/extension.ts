@@ -65,7 +65,7 @@ export function activate(context: vscode.ExtensionContext): void {
 	};
 	const syncTimer = setInterval(() => void runSync(), SYNC_MS);
 	context.subscriptions.push({ dispose: () => clearInterval(syncTimer) });
-	void runSync(); // attempt on activation
+	void runSync();
 
 	const sink: SegmentSink = {
 		onOpen: (record) => store.append(record),

@@ -1,8 +1,9 @@
 {
 	"name": "nt-time-tracker",
 	"displayName": "nt Time Tracker",
+	"icon": "images/icon.png",
 	"description": "Automatic, offline-first coding time tracking per project and branch",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"publisher": "nokotata",
 	"license": "MIT",
 	"repository": {

@@ -91,7 +91,7 @@ function subscribeToGit(api: GitApi, disposables: vscode.Disposable[], onChange:
 	);
 }
 
-export function normalizeRemote(url: string | undefined): string | undefined {
+function normalizeRemote(url: string | undefined): string | undefined {
 	if (!url) {
 		return undefined;
 	}
