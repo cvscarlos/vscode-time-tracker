@@ -45,17 +45,16 @@ The extension is **deployment-agnostic**: cloud and self-hosted expose the **sam
 
 **[0pandadev/solidtime-vscode](https://github.com/0pandadev/solidtime-vscode)** proves the solidtime API works and is a useful **API-layer reference**, but does **not** meet our requirements and will **not** be forked. Its gaps: state is **in-memory only** (loses time on restart while offline), it uses a **heartbeat accumulator** (counts gaps up to a 15-min idle as work — the inference we reject), it has **no branch/task, no commit messages, no multi-window coordination** (module-level state, entry-ID collisions), and it stores the **API key in plaintext settings**. We build our own and lift only its proven API calls.
 
-### solidtime REST surface (from the reference extension)
+### solidtime REST surface (verified against Cloud + the first-party desktop client)
 
-- Auth: `Authorization: Bearer <token>`, `Accept: application/json`.
-- `GET /api/v1/users/me` → user id.
-- `GET /api/v1/users/me/memberships` → organizations.
-- `GET /api/v1/organizations/{org}/members` → resolve **`member_id`** (match on user id). Required on every entry.
-- `GET|POST /api/v1/organizations/{org}/projects` → list / create project.
-- `GET|POST /api/v1/organizations/{org}/tasks` → list / create task (**org-scoped**, not project-nested; the task carries `project_id`). Verified against Cloud.
-- `GET /api/v1/organizations/{org}/time-entries?start=&end=` → list (used for reconciliation).
-- `POST /api/v1/organizations/{org}/time-entries` — body `{ member_id, start, end, duration, billable, project_id, task_id?, description, tags[] }`.
-- `PUT /api/v1/organizations/{org}/time-entries/{id}` — update.
+- Auth: **personal API token** via `Authorization: Bearer <token>`, `Accept: application/json`. (The first-party desktop app uses OAuth2 PKCE instead — better UX, much more work; a possible future enhancement, not v1.)
+- `GET /api/v1/users/me` → `{ data: { id, name, email, timezone, ... } }`.
+- `GET /api/v1/users/me/memberships` → `{ data: [{ id, organization: { id, name, currency }, role }] }`. **`membership.id` IS the `member_id`** required on every entry — no separate `/members` lookup needed.
+- `GET|POST /api/v1/organizations/{org}/projects` — create body `{ name, color, is_billable, billable_rate?, client_id?, is_public? }`.
+- `GET|POST /api/v1/organizations/{org}/tasks` — **org-scoped** (not project-nested); create body `{ name, project_id, estimated_time? }`.
+- `GET /api/v1/organizations/{org}/time-entries` — list (reconciliation; supports `member_id`/date filters).
+- `POST /api/v1/organizations/{org}/time-entries` — body `{ member_id, start, end?, billable, project_id?, task_id?, description?, tags? }`. **No `duration`** — the server derives it from `start`/`end`. `end` omitted = a running entry (not our case; we send finished intervals with both).
+- `PUT /api/v1/organizations/{org}/time-entries/{id}` — update (same optional fields). **No bulk-create endpoint** (single POST per entry; fine at 200 req/min). No server-side idempotency key — we add our own `[vsc:<segmentId>]` description marker + reconciliation (§8).
 
 ## 3. Design principles
 
