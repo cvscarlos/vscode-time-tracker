@@ -28,7 +28,10 @@ export function activate(context: vscode.ExtensionContext): void {
 	const config = vscode.workspace.getConfiguration('ntTimeTracker');
 	const outboxDir = path.join(context.globalStorageUri.fsPath, 'outbox');
 	const instanceId = `${vscode.env.machineId}-${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
-	const store = new FileOutboxStore(outboxDir, instanceId);
+	const minimumSegmentMs = config.get<number>('tracking.minimumSegmentSeconds', 20) * 1000;
+	// Recovered dangling-open segments below this active duration are dropped:
+	// they never emitted a close and so never met the state machine's minimum.
+	const store = new FileOutboxStore(outboxDir, instanceId, () => new Date(), minimumSegmentMs);
 
 	const statusBar = new StatusBar();
 	context.subscriptions.push({ dispose: () => statusBar.dispose() });
@@ -57,6 +60,9 @@ export function activate(context: vscode.ExtensionContext): void {
 			taskNameFor: (s) => s.branch ?? null,
 			log: (m) => output.appendLine(m),
 			onStatus: (pending, error) => {
+				// Reconcile the in-memory counter with the authoritative outbox
+				// count so a later onClose increments from truth, not a stale value.
+				pendingCount = pending;
 				statusBar.setPending(pending);
 				statusBar.setSyncError(error);
 			},
@@ -83,7 +89,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		instanceId,
 		idleTimeoutMs: config.get<number>('tracking.idleTimeoutSeconds', 120) * 1000,
 		focusLossGraceMs: config.get<number>('tracking.focusLossGraceMilliseconds', 250),
-		minimumSegmentMs: config.get<number>('tracking.minimumSegmentSeconds', 20) * 1000,
+		minimumSegmentMs,
 		checkpointIntervalMs: CHECKPOINT_MS,
 		sink,
 		generateId: () => crypto.randomUUID(),

@@ -5,6 +5,10 @@ interface Membership {
 	organization: { id: string; name: string };
 }
 
+// NOTE: listEntryMarkers/findProjectByName/findTaskByName read only the first
+// API page. This is intentional for the single-user scope of this extension —
+// the entry/project/task counts a lone user generates stay within one page.
+
 // solidtime validates dates as Y-m-d\TH:i:s\Z — RFC3339 without milliseconds.
 function toSolidtimeDate(iso: string): string {
 	return new Date(iso).toISOString().replace(/\.\d{3}Z$/, 'Z');

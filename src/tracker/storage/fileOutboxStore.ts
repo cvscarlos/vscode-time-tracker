@@ -11,7 +11,7 @@ const STALE_OPEN_MS = 120_000;
 
 function reconstructSegments(
 	records: JournalRecord[],
-	options?: { now?: number }
+	options?: { now?: number; minActiveMs?: number }
 ): LocalSegment[] {
 	const segments: LocalSegment[] = [];
 	const closedIds = new Set<string>();
@@ -20,6 +20,7 @@ function reconstructSegments(
 
 	for (const record of records) {
 		if (record.type === 'close') {
+			// Closed segments already met the minimum in the state machine.
 			segments.push(record.segment);
 			closedIds.add(record.segment.id);
 		} else if (record.type === 'open') {
@@ -29,6 +30,7 @@ function reconstructSegments(
 		}
 	}
 
+	const minActiveMs = options?.minActiveMs ?? 0;
 	for (const [id, open] of opens) {
 		if (closedIds.has(id)) {
 			continue;
@@ -47,12 +49,19 @@ function reconstructSegments(
 		if (!stale) {
 			continue;
 		}
+		const activeMilliseconds = Date.parse(checkpoint.lastActivity) - Date.parse(open.start);
+		// A dangling open never emitted a close, so it was never checked against
+		// the minimum-segment threshold. A sub-minimum reconstruction (e.g. an
+		// idle-close that dropped it) must not be resurrected and delivered.
+		if (activeMilliseconds < minActiveMs) {
+			continue;
+		}
 		segments.push({
 			id,
 			instanceId: open.instanceId,
 			start: open.start,
 			end: checkpoint.lastActivity,
-			activeMilliseconds: Date.parse(checkpoint.lastActivity) - Date.parse(open.start),
+			activeMilliseconds,
 			workspaceKey: open.context.workspaceKey,
 			projectName: open.context.projectName,
 			repositoryKey: open.context.repositoryKey,
@@ -71,7 +80,8 @@ export class FileOutboxStore implements Store {
 	public constructor(
 		private readonly directory: string,
 		private readonly instanceId: string,
-		private readonly now: () => Date = () => new Date()
+		private readonly now: () => Date = () => new Date(),
+		private readonly minActiveMs = 0
 	) {
 		this.claimsDir = path.join(directory, 'claims');
 		this.deliveredDir = path.join(directory, 'delivered');
@@ -92,7 +102,10 @@ export class FileOutboxStore implements Store {
 	}
 
 	public recover(): LocalSegment[] {
-		return reconstructSegments(this.readAllRecords(), { now: this.now().getTime() });
+		return reconstructSegments(this.readAllRecords(), {
+			now: this.now().getTime(),
+			minActiveMs: this.minActiveMs,
+		});
 	}
 
 	public listUndelivered(): LocalSegment[] {
@@ -126,7 +139,7 @@ export class FileOutboxStore implements Store {
 		const deliveredIds = new Set(fs.readdirSync(this.deliveredDir));
 		// Only rewrite files owned by this instance. Rewriting another live
 		// window's file could clobber a record it appended between our read and
-		// write. Clearing delivered tombstones/claims below is global and safe.
+		// write.
 		const ownFiles = this.journalFiles().filter((name) => name.startsWith(`${this.instanceId}-`));
 		for (const name of ownFiles) {
 			const full = path.join(this.directory, name);
@@ -143,16 +156,40 @@ export class FileOutboxStore implements Store {
 			if (kept.length === 0) {
 				this.tryRemove(full);
 			} else {
-				fs.writeFileSync(full, kept.join('\n') + '\n');
+				// Write atomically: a truncating write that crashes mid-flight
+				// would lose retained (undelivered) records. Rename is atomic on
+				// the same filesystem.
+				const tmp = `${full}.tmp`;
+				fs.writeFileSync(tmp, kept.join('\n') + '\n');
+				fs.renameSync(tmp, full);
 			}
 		}
+		// A delivered tombstone may reference a segment stored in ANOTHER
+		// instance's file, which we do not rewrite above. Removing the tombstone
+		// while that record is still on disk would let recover() re-surface it,
+		// churning it forever. Keep the tombstone until the id is no longer
+		// present in any journal file (its owning instance eventually compacts
+		// it). listUndelivered() excludes tombstoned ids, so the segment stays
+		// suppressed meanwhile.
+		const presentIds = this.presentSegmentIds();
 		for (const id of deliveredIds) {
+			if (presentIds.has(id)) {
+				continue;
+			}
 			this.tryRemove(path.join(this.deliveredDir, id));
 			this.tryRemove(path.join(this.claimsDir, `${id}.claim`));
 		}
 	}
 
-	private isDelivered(segmentId: string): boolean {
+	private presentSegmentIds(): Set<string> {
+		const ids = new Set<string>();
+		for (const record of this.readAllRecords()) {
+			ids.add(record.type === 'close' ? record.segment.id : record.id);
+		}
+		return ids;
+	}
+
+	public isDelivered(segmentId: string): boolean {
 		return fs.existsSync(path.join(this.deliveredDir, segmentId));
 	}
 

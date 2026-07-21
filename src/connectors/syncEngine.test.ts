@@ -3,6 +3,7 @@ import { EntryInput, TimeSyncConnector } from './connector';
 import { MappingStore } from './mappingStore';
 import { SyncEngine } from './syncEngine';
 import { FileOutboxStore } from '../tracker/storage/fileOutboxStore';
+import { Store } from '../tracker/storage/store';
 import { LocalSegment } from '../tracker/types';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -102,6 +103,40 @@ suite('SyncEngine', () => {
 		await engine.runOnce();
 		assert.equal(connector.created.length, 0);
 		assert.equal(store.listUndelivered().length, 0); // marked delivered via reconciliation
+	});
+
+	test('does NOT create an entry when the segment was delivered after the claim', async () => {
+		// A concurrent window delivered this segment between our listUndelivered()
+		// snapshot and our claim. isDelivered() must gate the send to avoid a
+		// duplicate, even though listUndelivered() still reported it.
+		const delivered = new Set<string>();
+		const claimed = new Set<string>();
+		const store: Store = {
+			append: () => {},
+			recover: () => [],
+			listUndelivered: () => [seg('d')],
+			claim: (id: string) => {
+				claimed.add(id);
+				return true;
+			},
+			isDelivered: (id: string) => id === 'd', // already delivered elsewhere
+			markDelivered: (id: string) => void delivered.add(id),
+			compact: () => {},
+		};
+		const connector = new FakeConnector();
+		const engine = new SyncEngine({
+			store,
+			connector,
+			mappings: new MappingStore(memMemento()),
+			projectNameFor: (s) => s.projectName,
+			// eslint-disable-next-line unicorn/no-null -- SyncEngineDeps.taskNameFor contract uses null for "no task"
+			taskNameFor: () => null,
+			log: () => {},
+			onStatus: () => {},
+		});
+		await engine.runOnce();
+		assert.equal(connector.created.length, 0);
+		assert.ok(claimed.has('d'));
 	});
 
 	test('caches a provisioned project id in the mapping store', async () => {

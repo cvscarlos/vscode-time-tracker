@@ -37,6 +37,13 @@ export class SyncEngine {
 				if (!store.claim(segment.id)) {
 					continue;
 				}
+				// Re-check delivery AFTER claiming: a delivered tombstone does not
+				// block a claim, so another window may have delivered this segment
+				// between our listUndelivered() snapshot and this claim. Sending
+				// again would create a duplicate.
+				if (store.isDelivered(segment.id)) {
+					continue;
+				}
 				if (present.has(segment.id)) {
 					store.markDelivered(segment.id);
 					continue;

@@ -1,3 +1,4 @@
+import path from 'node:path';
 import * as vscode from 'vscode';
 
 export interface GitInfo {
@@ -30,7 +31,12 @@ export function getGitInfo(folderFsPath: string): GitInfo {
 	const api = extension.exports.getAPI(1);
 	const repository =
 		api.getRepository(vscode.Uri.file(folderFsPath)) ??
-		api.repositories.find((r) => folderFsPath.startsWith(r.rootUri.fsPath));
+		api.repositories.find((r) => {
+			// Match the repo root exactly or a true sub-path — a bare startsWith
+			// would also match a sibling sharing a prefix (/a/project vs /a/project-2).
+			const root = r.rootUri.fsPath;
+			return folderFsPath === root || folderFsPath.startsWith(root + path.sep);
+		});
 	if (!repository) {
 		return {};
 	}

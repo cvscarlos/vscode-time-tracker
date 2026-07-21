@@ -87,6 +87,57 @@ suite('FileOutboxStore', () => {
 		assert.equal(store.recover().length, 0);
 	});
 
+	test('a reconstructed dangling open below minActiveMs is NOT recovered', () => {
+		const dir = tempDir();
+		const writer = new FileOutboxStore(dir, 'other-window', clock);
+		// Stale checkpoint (5 min old vs the 10:00 clock) but only 5s of active
+		// time — below a 20s minimum, so it must be dropped, not resurrected.
+		writer.append({ ...open('c'), start: '2026-07-21T09:55:00.000Z' });
+		writer.append({ type: 'checkpoint', id: 'c', lastActivity: '2026-07-21T09:55:05.000Z' });
+		const reopened = new FileOutboxStore(dir, 'fresh', clock, 20_000).recover();
+		assert.equal(reopened.length, 0);
+	});
+
+	test('a reconstructed dangling open at/above minActiveMs is recovered', () => {
+		const dir = tempDir();
+		const writer = new FileOutboxStore(dir, 'other-window', clock);
+		// Stale checkpoint with 30s of active time — at/above the 20s minimum.
+		writer.append({ ...open('c'), start: '2026-07-21T09:55:00.000Z' });
+		writer.append({ type: 'checkpoint', id: 'c', lastActivity: '2026-07-21T09:55:30.000Z' });
+		const reopened = new FileOutboxStore(dir, 'fresh', clock, 20_000).recover();
+		assert.equal(reopened.length, 1);
+		assert.equal(reopened[0].id, 'c');
+		assert.equal(reopened[0].activeMilliseconds, 30_000);
+	});
+
+	test('a closed segment below minActiveMs still passes through (it met the minimum on close)', () => {
+		const dir = tempDir();
+		new FileOutboxStore(dir, 'inst', clock).append({ type: 'close', segment: seg('a', 5000) });
+		const recovered = new FileOutboxStore(dir, 'fresh', clock, 20_000).recover();
+		assert.deepEqual(
+			recovered.map((s) => s.id),
+			['a']
+		);
+	});
+
+	test("compact keeps a delivered tombstone while another window's file still holds the id", () => {
+		const dir = tempDir();
+		const winB = new FileOutboxStore(dir, 'winB', clock);
+		winB.append({ type: 'close', segment: seg('shared', 1000) });
+		// Window A delivers a segment owned by window B's file. A cannot rewrite
+		// B's file during compact, so the tombstone must be retained to keep the
+		// segment suppressed — otherwise recover() re-surfaces it forever.
+		const winA = new FileOutboxStore(dir, 'winA', clock);
+		winA.markDelivered('shared');
+		winA.compact();
+		assert.ok(!winA.listUndelivered().some((s) => s.id === 'shared'));
+		assert.ok(fs.existsSync(path.join(dir, 'delivered', 'shared')));
+		// Repeated cycles must not re-surface it either.
+		winA.compact();
+		assert.ok(!winA.listUndelivered().some((s) => s.id === 'shared'));
+		assert.ok(fs.existsSync(path.join(dir, 'delivered', 'shared')));
+	});
+
 	test('claim grants a segment to exactly one caller', () => {
 		const dir = tempDir();
 		const a = new FileOutboxStore(dir, 'win1', clock);

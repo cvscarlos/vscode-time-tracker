@@ -5,6 +5,7 @@ export interface Store {
 	recover(): LocalSegment[];
 	listUndelivered(): LocalSegment[];
 	claim(segmentId: string): boolean;
+	isDelivered(segmentId: string): boolean;
 	markDelivered(segmentId: string): void;
 	compact(): void;
 }
