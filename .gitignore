@@ -1,4 +1,5 @@
 # Directories
+.claude/
 .superpowers/
 .vscode-test/
 docs/superpowers/
