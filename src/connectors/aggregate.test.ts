@@ -63,12 +63,13 @@ suite('aggregate', () => {
 		assert.equal(aggregate([seg('a', recentStart, recentEnd)], opts).length, 0);
 	});
 
-	test('drops a block under one rounded minute', () => {
-		// 16:00:10–16:00:35 → floor 16:00, ceil 16:01 = 1 min... so make it round to 0:
-		// 16:00:00–16:00:20 → floor 16:00, ceil 16:01 would be 1 min; instead a segment
-		// entirely within a minute that ceils to the same minute is impossible, so test
-		// the guard with a zero-length after rounding is N/A; assert a <20s isn't produced.
-		// Guard test: an empty input yields no blocks.
-		assert.equal(aggregate([], opts).length, 0);
+	test('drops a zero-length block (under one minute after rounding)', () => {
+		// A zero-length segment on a minute boundary floors start and ceils end to the
+		// same minute → rounded duration 0 (< 1 min) → dropped.
+		const blocks = aggregate(
+			[seg('a', '2026-07-21T16:00:00.000Z', '2026-07-21T16:00:00.000Z')],
+			opts
+		);
+		assert.equal(blocks.length, 0);
 	});
 });
