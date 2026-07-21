@@ -104,6 +104,19 @@ export class SessionStateMachine {
 		this.finalize(end);
 	}
 
+	currentStatus(): 'tracking' | 'idle' | 'unfocused' | 'paused' | 'disabled' {
+		if (!this.enabled) {
+			return 'disabled';
+		}
+		if (this.paused) {
+			return 'paused';
+		}
+		if (!this.focused) {
+			return 'unfocused';
+		}
+		return this.open ? 'tracking' : 'idle';
+	}
+
 	private canTrack(): boolean {
 		return this.enabled && !this.paused && this.focused && this.context !== undefined;
 	}

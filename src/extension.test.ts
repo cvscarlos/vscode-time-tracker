@@ -6,7 +6,9 @@ import * as vscode from 'vscode';
 import { FileOutboxStore } from './tracker/storage/fileOutboxStore';
 import { LocalSegment } from './tracker/types';
 
-const clock = () => new Date('2026-07-21T10:00:00Z');
+// 10:10 so the dangling open's 10:05 checkpoint below is comfortably stale
+// (> 2 min old) and gets reconstructed by recover().
+const clock = () => new Date('2026-07-21T10:10:00Z');
 
 function seg(id: string): LocalSegment {
 	return {

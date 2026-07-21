@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { watchActivity } from './tracker/activity/activityCollector';
 import { watchFocus } from './tracker/activity/focusController';
 import { SegmentSink, SessionStateMachine } from './tracker/activity/sessionStateMachine';
+import { watchGitContext } from './tracker/context/gitProvider';
 import { resolveContext } from './tracker/context/workspaceResolver';
 import { FileOutboxStore } from './tracker/storage/fileOutboxStore';
 import { LocalSegment } from './tracker/types';
@@ -25,16 +26,21 @@ export function activate(context: vscode.ExtensionContext): void {
 
 	const statusBar = new StatusBar();
 	context.subscriptions.push({ dispose: () => statusBar.dispose() });
-	statusBar.setPending(store.listUndelivered().length);
 
-	const refreshPending = () => statusBar.setPending(store.listUndelivered().length);
+	// Count the outbox ONCE at activation, then track it in memory. Re-reading
+	// every outbox file on every close is O(history) on the extension host.
+	// Outbox growth between activations is bounded by pass-2 delivery/compaction.
+	let pendingCount = store.listUndelivered().length;
+	statusBar.setPending(pendingCount);
 
 	const sink: SegmentSink = {
 		onOpen: (record) => store.append(record),
 		onCheckpoint: (record) => store.append(record),
 		onClose: (segment: LocalSegment) => {
 			store.append({ type: 'close', segment });
-			refreshPending();
+			// TODO(pass-2): delivery/purge will decrement pendingCount.
+			pendingCount += 1;
+			statusBar.setPending(pendingCount);
 			output.appendLine(`closed ${segment.projectName} ${segment.activeMilliseconds}ms`);
 		},
 	};
@@ -52,31 +58,40 @@ export function activate(context: vscode.ExtensionContext): void {
 	machine.setContext(resolveContext());
 
 	const refreshContext = () => machine?.setContext(resolveContext());
+	const syncStatus = () => {
+		if (machine) {
+			statusBar.setState(machine.currentStatus());
+		}
+	};
 	context.subscriptions.push(
 		watchFocus((focused, now) => {
 			machine?.onFocus(focused, now);
-			statusBar.setState(focused ? 'idle' : 'unfocused');
+			syncStatus();
 		}),
 		watchActivity((now) => {
 			machine?.onActivity(now);
-			statusBar.setState('tracking');
+			syncStatus();
 		}),
 		vscode.window.onDidChangeActiveTextEditor(refreshContext),
-		vscode.workspace.onDidChangeWorkspaceFolders(refreshContext)
+		vscode.workspace.onDidChangeWorkspaceFolders(refreshContext),
+		watchGitContext(refreshContext)
 	);
 
-	const timer = setInterval(() => machine?.tick(Date.now()), TICK_MS);
+	const timer = setInterval(() => {
+		machine?.tick(Date.now());
+		syncStatus();
+	}, TICK_MS);
 
 	context.subscriptions.push(
 		{ dispose: () => clearInterval(timer) },
 		vscode.commands.registerCommand('cvsTimeTracker.showOutput', () => output.show()),
 		vscode.commands.registerCommand('cvsTimeTracker.pause', () => {
 			machine?.pause(Date.now());
-			statusBar.setState('paused');
+			syncStatus();
 		}),
 		vscode.commands.registerCommand('cvsTimeTracker.resume', () => {
 			machine?.resume(Date.now());
-			statusBar.setState('idle');
+			syncStatus();
 		})
 	);
 

@@ -112,6 +112,23 @@ suite('SessionStateMachine', () => {
 		assert.equal(sink.closes.length, 0);
 	});
 
+	test('currentStatus reflects the real machine state', () => {
+		const sink = new RecordingSink();
+		const m = make(sink);
+		m.setContext(ctx);
+		m.onFocus(true, 0);
+		assert.equal(m.currentStatus(), 'idle');
+		m.onActivity(1000);
+		assert.equal(m.currentStatus(), 'tracking');
+		m.pause(2000);
+		assert.equal(m.currentStatus(), 'paused');
+		m.resume(3000);
+		assert.equal(m.currentStatus(), 'idle');
+		m.onFocus(false, 4000);
+		m.tick(4300);
+		assert.equal(m.currentStatus(), 'unfocused');
+	});
+
 	test('a checkpoint is emitted after the checkpoint interval', () => {
 		const sink = new RecordingSink();
 		const m = make(sink);

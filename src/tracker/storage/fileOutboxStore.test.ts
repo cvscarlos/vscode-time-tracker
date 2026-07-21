@@ -56,16 +56,29 @@ suite('FileOutboxStore', () => {
 		assert.deepEqual(ids, ['a', 'b']);
 	});
 
-	test('a dangling open with a checkpoint is recovered at the last checkpoint', () => {
+	test('a dangling open with a STALE checkpoint is recovered at the last checkpoint', () => {
 		const dir = tempDir();
 		const store = new FileOutboxStore(dir, 'other-window', clock);
-		store.append(open('c'));
-		store.append({ type: 'checkpoint', id: 'c', lastActivity: '2026-07-21T10:05:00.000Z' });
+		// Clock is 10:00:00Z; checkpoint at 09:55 is 5 min old (>= 2 min) so the
+		// open is stale (crashed window) and recoverable.
+		store.append({ ...open('c'), start: '2026-07-21T09:50:00.000Z' });
+		store.append({ type: 'checkpoint', id: 'c', lastActivity: '2026-07-21T09:55:00.000Z' });
 		const reopened = new FileOutboxStore(dir, 'fresh', clock).recover();
 		assert.equal(reopened.length, 1);
 		assert.equal(reopened[0].id, 'c');
-		assert.equal(reopened[0].end, '2026-07-21T10:05:00.000Z');
+		assert.equal(reopened[0].end, '2026-07-21T09:55:00.000Z');
 		assert.equal(reopened[0].activeMilliseconds, 300_000);
+	});
+
+	test('a FRESH dangling open (checkpoint within the last 120s) is NOT recovered', () => {
+		const dir = tempDir();
+		const store = new FileOutboxStore(dir, 'other-window', clock);
+		// Clock is 10:00:00Z; checkpoint at 09:59:30 is only 30s old, so this open
+		// belongs to a live window still writing checkpoints and must be skipped.
+		store.append(open('c'));
+		store.append({ type: 'checkpoint', id: 'c', lastActivity: '2026-07-21T09:59:30.000Z' });
+		const reopened = new FileOutboxStore(dir, 'fresh', clock).recover();
+		assert.equal(reopened.length, 0);
 	});
 
 	test('a dangling open with no checkpoint is dropped', () => {
@@ -98,6 +111,21 @@ suite('FileOutboxStore', () => {
 		store.compact();
 		const ids = store.recover().map((s) => s.id);
 		assert.deepEqual(ids, ['b']);
+	});
+
+	test('compact only rewrites this instance files, leaving other windows untouched', () => {
+		const dir = tempDir();
+		const win1 = new FileOutboxStore(dir, 'win1', clock);
+		const win2 = new FileOutboxStore(dir, 'win2', clock);
+		win1.append({ type: 'close', segment: seg('a', 1000) });
+		win2.append({ type: 'close', segment: seg('b', 2000) });
+		win1.markDelivered('a');
+		win1.compact();
+		// win1's delivered segment is gone; win2's file was never rewritten and
+		// its segment is still recoverable.
+		const ids = new FileOutboxStore(dir, 'fresh', clock).recover().map((s) => s.id);
+		assert.deepEqual(ids, ['b']);
+		assert.ok(fs.existsSync(path.join(dir, 'win2-2026-07-21.jsonl')));
 	});
 
 	test('compact tolerates a torn trailing line without throwing', () => {

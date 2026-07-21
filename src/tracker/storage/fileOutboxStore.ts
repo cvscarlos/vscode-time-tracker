@@ -4,8 +4,15 @@ import { CheckpointRecord, JournalRecord, LocalSegment, OpenRecord } from '../ty
 import { Store } from './store';
 
 const CLAIM_LEASE_MS = 5 * 60 * 1000;
+// 2x the 60s checkpoint cadence: an open whose last checkpoint is older than
+// this cannot belong to a live window still writing checkpoints, so it is
+// treated as crashed/stale and safe to recover.
+const STALE_OPEN_MS = 120_000;
 
-export function reconstructSegments(records: JournalRecord[]): LocalSegment[] {
+export function reconstructSegments(
+	records: JournalRecord[],
+	options?: { now?: number }
+): LocalSegment[] {
 	const segments: LocalSegment[] = [];
 	const closedIds = new Set<string>();
 	const opens = new Map<string, OpenRecord>();
@@ -28,6 +35,16 @@ export function reconstructSegments(records: JournalRecord[]): LocalSegment[] {
 		}
 		const checkpoint = lastCheckpoint.get(id);
 		if (!checkpoint) {
+			continue;
+		}
+		// A dangling open is only recoverable when staleness is not being
+		// filtered (now === undefined) or its last checkpoint is old enough that
+		// no live window could still own it. A fresh open belongs to a running
+		// window and would otherwise be delivered truncated at its checkpoint.
+		const stale =
+			options?.now === undefined ||
+			options.now - Date.parse(checkpoint.lastActivity) >= STALE_OPEN_MS;
+		if (!stale) {
 			continue;
 		}
 		segments.push({
@@ -75,7 +92,7 @@ export class FileOutboxStore implements Store {
 	}
 
 	public recover(): LocalSegment[] {
-		return reconstructSegments(this.readAllRecords());
+		return reconstructSegments(this.readAllRecords(), { now: this.now().getTime() });
 	}
 
 	public listUndelivered(): LocalSegment[] {
@@ -107,7 +124,11 @@ export class FileOutboxStore implements Store {
 
 	public compact(): void {
 		const deliveredIds = new Set(fs.readdirSync(this.deliveredDir));
-		for (const name of this.journalFiles()) {
+		// Only rewrite files owned by this instance. Rewriting another live
+		// window's file could clobber a record it appended between our read and
+		// write. Clearing delivered tombstones/claims below is global and safe.
+		const ownFiles = this.journalFiles().filter((name) => name.startsWith(`${this.instanceId}-`));
+		for (const name of ownFiles) {
 			const full = path.join(this.directory, name);
 			const kept = fs
 				.readFileSync(full, 'utf8')
