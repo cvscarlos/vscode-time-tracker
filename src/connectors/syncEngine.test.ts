@@ -1,4 +1,5 @@
 import * as assert from 'node:assert';
+import { DeliveryBlock } from './aggregate';
 import { EntryInput, TimeSyncConnector } from './connector';
 import { MappingStore } from './mappingStore';
 import { SyncEngine } from './syncEngine';
@@ -194,6 +195,28 @@ suite('SyncEngine', () => {
 		assert.equal(connector.created[0].start, '2026-07-21T09:00:00.000Z');
 		assert.equal(connector.created[0].end, '2026-07-21T09:20:00.000Z');
 		assert.equal(store.listUndelivered().length, 0);
+	});
+
+	test('calls onDelivered with the connector-assigned entry id and the delivered block', async () => {
+		const store = tempStore();
+		store.append({ type: 'close', segment: seg('e') });
+		const connector = new FakeConnector();
+		const delivered: { entryId: string; block: DeliveryBlock }[] = [];
+		const engine = new SyncEngine({
+			store,
+			connector,
+			mappings: new MappingStore(memMemento()),
+			now: () => NOW_MS,
+			settleMs: SETTLE_MS,
+			mergeGapMs: MERGE_GAP_MS,
+			log: () => {},
+			onStatus: () => {},
+			onDelivered: (entryId, block) => delivered.push({ entryId, block }),
+		});
+		await engine.runOnce();
+		assert.equal(delivered.length, 1);
+		assert.equal(delivered[0].entryId, 'entry-e');
+		assert.equal(delivered[0].block.segmentIds[0], 'e');
 	});
 
 	test('holds an unsettled segment: no entry created, segment stays undelivered', async () => {

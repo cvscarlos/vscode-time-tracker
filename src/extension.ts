@@ -6,9 +6,11 @@ import { getSolidtimeConfig } from './configuration/settings';
 import { MappingStore } from './connectors/mappingStore';
 import { SolidtimeConnector } from './connectors/solidtime/solidtimeConnector';
 import { SyncEngine } from './connectors/syncEngine';
+import { coveringCommit, TitleStore } from './connectors/titleStore';
 import { watchActivity } from './tracker/activity/activityCollector';
 import { watchFocus } from './tracker/activity/focusController';
 import { SegmentSink, SessionStateMachine } from './tracker/activity/sessionStateMachine';
+import { backfillCommits, watchCommits } from './tracker/context/gitCommits';
 import { watchGitContext } from './tracker/context/gitProvider';
 import { resolveContext } from './tracker/context/workspaceResolver';
 import { FileOutboxStore } from './tracker/storage/fileOutboxStore';
@@ -45,6 +47,35 @@ export function activate(context: vscode.ExtensionContext): void {
 	statusBar.setPending(pendingCount);
 
 	const mappings = new MappingStore(context.globalState);
+	const titleStore = new TitleStore(context.globalState);
+
+	const runTitling = async () => {
+		const token = await getToken(context);
+		if (!token) {
+			return; // no token yet — titling resumes once a token is set
+		}
+		const cfg = getSolidtimeConfig();
+		const connector = new SolidtimeConnector(cfg.apiUrl, token, cfg.organizationId);
+		try {
+			const { organizationId } = await connector.resolveMember();
+			const commits = titleStore.commits();
+			for (const e of titleStore.untitled()) {
+				const c = coveringCommit(e.endMs, e.branch, commits);
+				if (c) {
+					await connector.updateEntryDescription(
+						organizationId,
+						e.entryId,
+						`${c.title} [vsc:${e.markerId}]`
+					);
+					await titleStore.markTitled(e.entryId);
+					output.appendLine(`titled ${e.entryId} -> ${c.title}`);
+				}
+			}
+		} catch (error) {
+			output.appendLine(`titling failed: ${String(error)}`);
+		}
+	};
+
 	const runSync = async () => {
 		const token = await getToken(context);
 		if (!token) {
@@ -68,12 +99,42 @@ export function activate(context: vscode.ExtensionContext): void {
 				statusBar.setPending(pending);
 				statusBar.setSyncError(error);
 			},
+			onDelivered: (entryId, block) => {
+				if (block.branch) {
+					void titleStore.recordDelivered({
+						entryId,
+						branch: block.branch,
+						endMs: Date.parse(block.end),
+						markerId: block.segmentIds[0],
+					});
+				}
+			},
 		});
 		await engine.runOnce();
+		await runTitling();
 	};
 	const syncTimer = setInterval(() => void runSync(), SYNC_MS);
 	context.subscriptions.push({ dispose: () => clearInterval(syncTimer) });
 	void runSync();
+
+	context.subscriptions.push(
+		watchCommits((c) => {
+			void (async () => {
+				await titleStore.addCommit(c);
+				await runTitling();
+			})();
+		})
+	);
+
+	// Offline catch-up: pick up commits made while VS Code wasn't running, then
+	// retitle anything they now cover. Fire-and-forget — activation must not wait.
+	void (async () => {
+		for (const c of await backfillCommits()) {
+			await titleStore.addCommit(c);
+		}
+		await titleStore.prune(Date.now(), 48 * 60 * 60 * 1000);
+		await runTitling();
+	})();
 
 	const sink: SegmentSink = {
 		onOpen: (record) => store.append(record),

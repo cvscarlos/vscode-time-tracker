@@ -1,4 +1,4 @@
-import { aggregate } from './aggregate';
+import { aggregate, DeliveryBlock } from './aggregate';
 import { ConnectorError, EntryInput, TimeSyncConnector } from './connector';
 import { MappingStore } from './mappingStore';
 import { Store } from '../tracker/storage/store';
@@ -12,6 +12,7 @@ export interface SyncEngineDeps {
 	mergeGapMs: number;
 	log: (message: string) => void;
 	onStatus: (pending: number, error: boolean) => void;
+	onDelivered?: (entryId: string, block: DeliveryBlock) => void;
 }
 
 export class SyncEngine {
@@ -75,7 +76,8 @@ export class SyncEngine {
 						taskId,
 						description: block.branch ?? block.projectName,
 					};
-					await connector.createEntry(organizationId, memberId, entry);
+					const entryId = await connector.createEntry(organizationId, memberId, entry);
+					this.deps.onDelivered?.(entryId, block);
 					for (const id of block.segmentIds) {
 						store.markDelivered(id);
 					}
