@@ -9,5 +9,6 @@ tmp/
 
 # Files
 .DS_Store
+.env
 Desktop.ini
 Thumbs.db
