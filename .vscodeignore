@@ -1,0 +1,21 @@
+# Source & build tooling
+src/**
+out/**/*.test.js
+**/*.ts
+**/*.map
+**/tsconfig.json
+**/eslint.config.mjs
+.prettierrc.json
+.prettierignore
+.nvmrc
+
+# Editor / test / dev dirs
+.vscode/**
+.vscode-test/**
+**/.vscode-test.*
+tmp/**
+
+# Repo metadata
+.gitignore
+docs/**
+ARCHITECTURE.md
