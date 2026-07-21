@@ -1,0 +1,102 @@
+import * as assert from 'node:assert';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import path from 'node:path';
+import { FileOutboxStore } from './fileOutboxStore';
+import { LocalSegment, OpenRecord } from '../types';
+
+const clock = () => new Date('2026-07-21T10:00:00Z');
+
+function tempDir(): string {
+	return fs.mkdtempSync(path.join(os.tmpdir(), 'cvs-outbox-'));
+}
+
+function seg(id: string, ms: number): LocalSegment {
+	return {
+		id,
+		instanceId: 'inst',
+		start: '2026-07-21T09:00:00.000Z',
+		end: '2026-07-21T09:30:00.000Z',
+		activeMilliseconds: ms,
+		workspaceKey: 'ws',
+		projectName: 'proj',
+		branch: 'main',
+		syncState: 'pending',
+	};
+}
+
+function open(id: string): OpenRecord {
+	return {
+		type: 'open',
+		id,
+		start: '2026-07-21T10:00:00.000Z',
+		instanceId: 'other-window',
+		context: { workspaceKey: 'ws', projectName: 'proj', branch: 'main' },
+	};
+}
+
+suite('FileOutboxStore', () => {
+	test('append then recover round-trips a closed segment', () => {
+		const store = new FileOutboxStore(tempDir(), 'inst', clock);
+		store.append({ type: 'close', segment: seg('a', 1000) });
+		const recovered = store.recover();
+		assert.equal(recovered.length, 1);
+		assert.equal(recovered[0].id, 'a');
+	});
+
+	test('recover reads across MULTIPLE window files (centralized)', () => {
+		const dir = tempDir();
+		new FileOutboxStore(dir, 'win1', clock).append({ type: 'close', segment: seg('a', 1000) });
+		new FileOutboxStore(dir, 'win2', clock).append({ type: 'close', segment: seg('b', 2000) });
+		const ids = new FileOutboxStore(dir, 'win3', clock)
+			.recover()
+			.map((s) => s.id)
+			// eslint-disable-next-line unicorn/no-array-sort -- freshly derived array from map(), safe to mutate in place
+			.sort();
+		assert.deepEqual(ids, ['a', 'b']);
+	});
+
+	test('a dangling open with a checkpoint is recovered at the last checkpoint', () => {
+		const dir = tempDir();
+		const store = new FileOutboxStore(dir, 'other-window', clock);
+		store.append(open('c'));
+		store.append({ type: 'checkpoint', id: 'c', lastActivity: '2026-07-21T10:05:00.000Z' });
+		const reopened = new FileOutboxStore(dir, 'fresh', clock).recover();
+		assert.equal(reopened.length, 1);
+		assert.equal(reopened[0].id, 'c');
+		assert.equal(reopened[0].end, '2026-07-21T10:05:00.000Z');
+		assert.equal(reopened[0].activeMilliseconds, 300_000);
+	});
+
+	test('a dangling open with no checkpoint is dropped', () => {
+		const store = new FileOutboxStore(tempDir(), 'inst', clock);
+		store.append(open('d'));
+		assert.equal(store.recover().length, 0);
+	});
+
+	test('claim grants a segment to exactly one caller', () => {
+		const dir = tempDir();
+		const a = new FileOutboxStore(dir, 'win1', clock);
+		const b = new FileOutboxStore(dir, 'win2', clock);
+		assert.equal(a.claim('x'), true);
+		assert.equal(b.claim('x'), false);
+	});
+
+	test('markDelivered removes a segment from listUndelivered', () => {
+		const store = new FileOutboxStore(tempDir(), 'inst', clock);
+		store.append({ type: 'close', segment: seg('a', 1000) });
+		assert.equal(store.listUndelivered().length, 1);
+		store.markDelivered('a');
+		assert.equal(store.listUndelivered().length, 0);
+	});
+
+	test('compact drops delivered segments from the journal', () => {
+		const store = new FileOutboxStore(tempDir(), 'inst', clock);
+		store.append({ type: 'close', segment: seg('a', 1000) });
+		store.append({ type: 'close', segment: seg('b', 2000) });
+		store.markDelivered('a');
+		store.compact();
+		const ids = store.recover().map((s) => s.id);
+		assert.deepEqual(ids, ['b']);
+	});
+});
