@@ -112,7 +112,13 @@ export class FileOutboxStore implements Store {
 			const kept = fs
 				.readFileSync(full, 'utf8')
 				.split('\n')
-				.filter((line) => line.trim() !== '' && !deliveredIds.has(segmentIdOf(line)));
+				.filter((line) => {
+					if (line.trim() === '') {
+						return false;
+					}
+					const segmentId = segmentIdOf(line);
+					return segmentId !== undefined && !deliveredIds.has(segmentId);
+				});
 			if (kept.length === 0) {
 				this.tryRemove(full);
 			} else {
@@ -193,7 +199,12 @@ export class FileOutboxStore implements Store {
 	}
 }
 
-function segmentIdOf(line: string): string {
-	const record = JSON.parse(line) as JournalRecord;
-	return record.type === 'close' ? record.segment.id : record.id;
+function segmentIdOf(line: string): string | undefined {
+	try {
+		const record = JSON.parse(line) as JournalRecord;
+		return record.type === 'close' ? record.segment.id : record.id;
+	} catch {
+		// Append-only: only a torn trailing line can be invalid; treat it as garbage to compact away.
+		return undefined;
+	}
 }

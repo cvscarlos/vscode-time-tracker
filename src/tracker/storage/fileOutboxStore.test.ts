@@ -99,4 +99,15 @@ suite('FileOutboxStore', () => {
 		const ids = store.recover().map((s) => s.id);
 		assert.deepEqual(ids, ['b']);
 	});
+
+	test('compact tolerates a torn trailing line without throwing', () => {
+		const dir = tempDir();
+		const store = new FileOutboxStore(dir, 'inst', clock);
+		store.append({ type: 'close', segment: seg('a', 1000) });
+		const journalFile = path.join(dir, 'inst-2026-07-21.jsonl');
+		fs.appendFileSync(journalFile, '{ not valid json');
+		assert.doesNotThrow(() => store.compact());
+		const ids = store.recover().map((s) => s.id);
+		assert.deepEqual(ids, ['a']);
+	});
 });
