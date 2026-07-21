@@ -78,7 +78,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		onCheckpoint: (record) => store.append(record),
 		onClose: (segment: LocalSegment) => {
 			store.append({ type: 'close', segment });
-			// TODO(pass-2): delivery/purge will decrement pendingCount.
+			// pendingCount is reconciled to the authoritative count on each sync (onStatus).
 			pendingCount += 1;
 			statusBar.setPending(pendingCount);
 			output.appendLine(`closed ${segment.projectName} ${segment.activeMilliseconds}ms`);
