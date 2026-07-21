@@ -151,7 +151,7 @@ export function activate(context: vscode.ExtensionContext): void {
 	machine = new SessionStateMachine({
 		instanceId,
 		idleTimeoutMs: config.get<number>('tracking.idleTimeoutSeconds', 120) * 1000,
-		focusLossGraceMs: config.get<number>('tracking.focusLossGraceMilliseconds', 250),
+		focusLossToleranceMs: config.get<number>('tracking.focusLossToleranceSeconds', 25) * 1000,
 		minimumSegmentMs,
 		checkpointIntervalMs: CHECKPOINT_MS,
 		sink,

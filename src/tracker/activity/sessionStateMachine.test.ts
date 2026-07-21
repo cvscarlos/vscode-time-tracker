@@ -26,7 +26,7 @@ function make(sink: SegmentSink): SessionStateMachine {
 	return new SessionStateMachine({
 		instanceId: 'inst',
 		idleTimeoutMs: 120_000,
-		focusLossGraceMs: 250,
+		focusLossToleranceMs: 25_000,
 		minimumSegmentMs: 20_000,
 		checkpointIntervalMs: 30_000,
 		sink,
@@ -35,7 +35,7 @@ function make(sink: SegmentSink): SessionStateMachine {
 }
 
 suite('SessionStateMachine', () => {
-	test('focus + activity opens a segment; blur past grace closes at blur time', () => {
+	test('focus + activity opens a segment; blur beyond tolerance closes at blur time', () => {
 		const sink = new RecordingSink();
 		const m = make(sink);
 		m.setContext(ctx);
@@ -44,22 +44,22 @@ suite('SessionStateMachine', () => {
 		assert.equal(sink.opens.length, 1);
 		assert.equal(sink.opens[0].start, iso(2000));
 		m.onFocus(false, 60_000);
-		m.tick(60_300);
+		m.tick(60_000 + 25_000 + 1);
 		assert.equal(sink.closes.length, 1);
 		assert.equal(sink.closes[0].end, iso(60_000));
 		assert.equal(sink.closes[0].activeMilliseconds, 58_000);
 		assert.equal(sink.closes[0].branch, 'main');
 	});
 
-	test('blur then refocus within grace does not close', () => {
+	test('blur then refocus within tolerance does not close', () => {
 		const sink = new RecordingSink();
 		const m = make(sink);
 		m.setContext(ctx);
 		m.onFocus(true, 0);
 		m.onActivity(1000);
 		m.onFocus(false, 60_000);
-		m.onFocus(true, 60_100);
-		m.tick(60_400);
+		m.onFocus(true, 70_000);
+		m.tick(71_000);
 		assert.equal(sink.closes.length, 0);
 	});
 
@@ -126,6 +126,20 @@ suite('SessionStateMachine', () => {
 		assert.equal(m.currentStatus(), 'idle');
 		m.onFocus(false, 4000);
 		m.tick(4300);
+		assert.equal(m.currentStatus(), 'unfocused');
+	});
+
+	test('currentStatus stays tracking through a blur within tolerance, then reports unfocused once closed', () => {
+		const sink = new RecordingSink();
+		const m = make(sink);
+		m.setContext(ctx);
+		m.onFocus(true, 0);
+		m.onActivity(1000);
+		assert.equal(m.currentStatus(), 'tracking');
+		m.onFocus(false, 30_000);
+		assert.equal(m.currentStatus(), 'tracking');
+		m.tick(30_000 + 25_000 + 1);
+		assert.equal(sink.closes.length, 1);
 		assert.equal(m.currentStatus(), 'unfocused');
 	});
 

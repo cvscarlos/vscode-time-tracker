@@ -9,7 +9,7 @@ export interface SegmentSink {
 export interface StateMachineOptions {
 	instanceId: string;
 	idleTimeoutMs: number;
-	focusLossGraceMs: number;
+	focusLossToleranceMs: number;
 	minimumSegmentMs: number;
 	checkpointIntervalMs: number;
 	sink: SegmentSink;
@@ -61,7 +61,7 @@ export class SessionStateMachine {
 	}
 
 	tick(now: number): void {
-		if (this.blurAt !== undefined && now - this.blurAt >= this.options.focusLossGraceMs) {
+		if (this.blurAt !== undefined && now - this.blurAt >= this.options.focusLossToleranceMs) {
 			this.finalize(this.blurAt);
 			this.blurAt = undefined;
 			return;
@@ -111,10 +111,13 @@ export class SessionStateMachine {
 		if (this.paused) {
 			return 'paused';
 		}
+		if (this.open) {
+			return 'tracking';
+		}
 		if (!this.focused) {
 			return 'unfocused';
 		}
-		return this.open ? 'tracking' : 'idle';
+		return 'idle';
 	}
 
 	private canTrack(): boolean {

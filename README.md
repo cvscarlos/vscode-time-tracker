@@ -32,7 +32,7 @@ By default it targets **solidtime Cloud** (`https://app.solidtime.io`). To use a
 | `ntTimeTracker.solidtime.apiUrl` | `https://app.solidtime.io` | solidtime base URL (cloud or self-hosted). |
 | `ntTimeTracker.solidtime.organizationId` | `""` | solidtime organization id; blank uses your first organization. |
 | `ntTimeTracker.tracking.idleTimeoutSeconds` | `120` | Idle timeout that ends a work interval. |
-| `ntTimeTracker.tracking.focusLossGraceMilliseconds` | `250` | Grace before a blur counts as focus loss (avoids flicker). |
+| `ntTimeTracker.tracking.focusLossToleranceSeconds` | `25` | Seconds a brief look-away is tolerated before a work segment closes. |
 | `ntTimeTracker.tracking.minimumSegmentSeconds` | `20` | Intervals shorter than this are discarded. |
 
 ## Commands

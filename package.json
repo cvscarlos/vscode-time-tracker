@@ -54,9 +54,10 @@
 					"type": "number",
 					"default": 120
 				},
-				"ntTimeTracker.tracking.focusLossGraceMilliseconds": {
+				"ntTimeTracker.tracking.focusLossToleranceSeconds": {
 					"type": "number",
-					"default": 250
+					"default": 25,
+					"description": "Seconds a brief look-away is tolerated before a work segment closes."
 				},
 				"ntTimeTracker.tracking.minimumSegmentSeconds": {
 					"type": "number",
