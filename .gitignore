@@ -1,6 +1,7 @@
 # Directories
 .superpowers/
 .vscode-test/
+docs/superpowers/
 node_modules/
 out/
 tmp/
