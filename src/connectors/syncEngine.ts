@@ -20,6 +20,7 @@ export class SyncEngine {
 		const { store, connector, log, onStatus } = this.deps;
 		const undelivered = store.listUndelivered();
 		onStatus(undelivered.length, false);
+		log(`sync: ${undelivered.length} undelivered segment(s)`);
 		if (undelivered.length === 0) {
 			return;
 		}
@@ -74,7 +75,7 @@ export class SyncEngine {
 		} catch (error) {
 			const authHint =
 				error instanceof ConnectorError && error.status === 401
-					? ' (check your API token: "nt Time Tracker: Set solidtime API Token")'
+					? ' (check your API token: "Time Tracker nt: Set solidtime API Token")'
 					: '';
 			log(`sync failed: ${String(error)}${authHint}`);
 			onStatus(store.listUndelivered().length, true);

@@ -1,9 +1,9 @@
 {
 	"name": "nt-time-tracker",
-	"displayName": "nt Time Tracker",
+	"displayName": "Time Tracker nt",
 	"icon": "images/icon.png",
 	"description": "Automatic, offline-first coding time tracking per project and branch",
-	"version": "0.1.3",
+	"version": "0.1.4",
 	"publisher": "nokotata",
 	"license": "MIT",
 	"repository": {
@@ -24,27 +24,27 @@
 		"commands": [
 			{
 				"command": "ntTimeTracker.pause",
-				"title": "nt Time Tracker: Pause"
+				"title": "Time Tracker nt: Pause"
 			},
 			{
 				"command": "ntTimeTracker.resume",
-				"title": "nt Time Tracker: Resume"
+				"title": "Time Tracker nt: Resume"
 			},
 			{
 				"command": "ntTimeTracker.showOutput",
-				"title": "nt Time Tracker: Show Output"
+				"title": "Time Tracker nt: Show Output"
 			},
 			{
 				"command": "ntTimeTracker.setApiToken",
-				"title": "nt Time Tracker: Set solidtime API Token"
+				"title": "Time Tracker nt: Set solidtime API Token"
 			},
 			{
 				"command": "ntTimeTracker.syncNow",
-				"title": "nt Time Tracker: Sync Now"
+				"title": "Time Tracker nt: Sync Now"
 			}
 		],
 		"configuration": {
-			"title": "nt Time Tracker",
+			"title": "Time Tracker nt",
 			"properties": {
 				"ntTimeTracker.enabled": {
 					"type": "boolean",

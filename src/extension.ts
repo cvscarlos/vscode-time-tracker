@@ -22,7 +22,7 @@ const SYNC_MS = 3 * 60_000;
 let machine: SessionStateMachine | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
-	const output = vscode.window.createOutputChannel('nt Time Tracker');
+	const output = vscode.window.createOutputChannel('Time Tracker nt');
 	context.subscriptions.push(output);
 
 	const config = vscode.workspace.getConfiguration('ntTimeTracker');
@@ -150,7 +150,8 @@ export function activate(context: vscode.ExtensionContext): void {
 		vscode.commands.registerCommand('ntTimeTracker.syncNow', () => void runSync())
 	);
 
-	output.appendLine(`nt Time Tracker activated (instance ${instanceId})`);
+	const version = context.extension.packageJSON.version as string;
+	output.appendLine(`Time Tracker nt v${version} activated (instance ${instanceId})`);
 }
 
 export function deactivate(): void {

@@ -51,6 +51,6 @@ export class StatusBar {
 			parts.push('$(warning)');
 		}
 		this.item.text = parts.join(' · ');
-		this.item.tooltip = 'nt Time Tracker — click for the log';
+		this.item.tooltip = 'Time Tracker nt — click for the log';
 	}
 }
