@@ -108,7 +108,9 @@ suite('SessionStateMachine', () => {
 		m.onFocus(true, 0);
 		m.onActivity(1000);
 		m.onFocus(false, 5000);
-		m.tick(5300);
+		// tick past the blur tolerance so the segment finalizes: active time is
+		// 5000 - 1000 = 4000ms < the 20s minimum, so it is dropped (no close emitted).
+		m.tick(5000 + 25_000 + 1);
 		assert.equal(sink.closes.length, 0);
 	});
 
