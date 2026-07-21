@@ -2,7 +2,7 @@
 	"name": "cvs-time-tracker",
 	"displayName": "cvs Time Tracker",
 	"description": "Automatic, offline-first coding time tracking per project and branch",
-	"version": "0.0.1",
+	"version": "0.1.0",
 	"publisher": "cvscarlos",
 	"license": "MIT",
 	"repository": {
@@ -32,6 +32,10 @@
 			{
 				"command": "cvsTimeTracker.showOutput",
 				"title": "cvs Time Tracker: Show Output"
+			},
+			{
+				"command": "cvsTimeTracker.setApiToken",
+				"title": "cvs Time Tracker: Set solidtime API Token"
 			}
 		],
 		"configuration": {
@@ -52,6 +56,16 @@
 				"cvsTimeTracker.tracking.minimumSegmentSeconds": {
 					"type": "number",
 					"default": 20
+				},
+				"cvsTimeTracker.solidtime.apiUrl": {
+					"type": "string",
+					"default": "https://app.solidtime.io",
+					"description": "solidtime base URL (cloud or self-hosted)."
+				},
+				"cvsTimeTracker.solidtime.organizationId": {
+					"type": "string",
+					"default": "",
+					"description": "solidtime organization id. Leave blank to use your first organization."
 				}
 			}
 		}

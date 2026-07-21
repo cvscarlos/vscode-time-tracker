@@ -1,6 +1,7 @@
 import * as crypto from 'node:crypto';
 import path from 'node:path';
 import * as vscode from 'vscode';
+import { getToken, setToken } from './configuration/secrets';
 import { watchActivity } from './tracker/activity/activityCollector';
 import { watchFocus } from './tracker/activity/focusController';
 import { SegmentSink, SessionStateMachine } from './tracker/activity/sessionStateMachine';
@@ -92,6 +93,20 @@ export function activate(context: vscode.ExtensionContext): void {
 		vscode.commands.registerCommand('cvsTimeTracker.resume', () => {
 			machine?.resume(Date.now());
 			syncStatus();
+		}),
+		vscode.commands.registerCommand('cvsTimeTracker.setApiToken', async () => {
+			const existing = await getToken(context);
+			const token = await vscode.window.showInputBox({
+				title: 'solidtime API Token',
+				prompt: 'Paste a personal API token from solidtime → Profile Settings → Create API Token',
+				password: true,
+				value: existing ? '' : undefined,
+				placeHolder: existing ? '(a token is already set — type to replace)' : undefined,
+			});
+			if (token && token.trim() !== '') {
+				await setToken(context, token.trim());
+				vscode.window.showInformationMessage('solidtime API token saved.');
+			}
 		})
 	);
 
