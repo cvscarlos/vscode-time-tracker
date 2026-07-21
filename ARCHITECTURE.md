@@ -30,7 +30,7 @@ Why, against the alternatives evaluated (Clockify Free, Wakapi, TimeTagger, Kima
 - **Interval-based** — you POST exact `start`/`end` entries, so precise focus-based tracking is honored with no server-side inference (unlike Wakapi's heartbeat density).
 - **Local-first / offline compatible** — solidtime accepts finished entries; it does not need to be always-on. The extension buffers to disk and flushes when reachable.
 - **No API quota** — it's the user's own server, so the entire Clockify-style rate-budget design is unnecessary.
-- **Runs on modest self-hosted hardware** (if self-hosting) — a low-power box with a weak CPU is enough for a single user. Estimated footprint idle ≈ 0.5–0.9 GB RAM, light single-user ≈ 0.8–1.5 GB; the CPU is the limiting factor but fine for single-user bursty load. **Recommended: disable the Gotenberg/PDF service** (the heaviest component) unless PDF export is needed. *(Largely moot for v1, which targets Cloud Free.)*
+- **Runs on modest self-hosted hardware** (if self-hosting) — a low-power box with a weak CPU is enough for a single user. Estimated footprint idle ≈ 0.5–0.9 GB RAM, light single-user ≈ 0.8–1.5 GB; the CPU is the limiting factor but fine for single-user bursty load. **Recommended: disable the Gotenberg/PDF service** (the heaviest component) unless PDF export is needed. _(Largely moot for v1, which targets Cloud Free.)_
 
 ### Deployment is a config choice, not a design choice
 
@@ -70,7 +70,7 @@ The extension is **deployment-agnostic**: cloud and self-hosted expose the **sam
 - **Simple Coding Time Tracker** — https://github.com/twentyTwo/vsc-ext-coding-time-tracker
   Borrow: session state machine, activity/inactivity detection, project+branch attribution, local-first persistence, status-bar summaries, local history/filtering/export, splitting sessions on project/branch change. Improve: use built-in Git extension events instead of polling.
 - **WakaTime** — https://github.com/wakatime/vscode-wakatime
-  Borrow: event-driven activity *signals*, debouncing/dedup, offline buffering, project+branch context, activity classification. Do **not** copy server-side duration inference — we ship exact intervals.
+  Borrow: event-driven activity _signals_, debouncing/dedup, offline buffering, project+branch context, activity classification. Do **not** copy server-side duration inference — we ship exact intervals.
 - **Clockify Timer** — https://github.com/gbrlstr/clockify-timer
   Borrow: command/UX patterns, status-bar + (later) TreeView navigation, error handling. Do **not** copy live-timer, plaintext key storage, or IDE-open/close autostart.
 - **solidtime-vscode** — API-layer reference only (see §2).
@@ -85,11 +85,11 @@ The extension is two decoupled layers:
 
 ```ts
 interface TimeSyncConnector {
-  resolveOrCreateProject(workspaceKey, name): Promise<projectId>;
-  resolveOrCreateTask(projectId, branch): Promise<taskId>;
-  createEntry(entry): Promise<backendEntryId>;
-  updateEntry(id, entry): Promise<void>;
-  findEntryByMarker(marker, timeRange): Promise<id | null>; // reconciliation
+	resolveOrCreateProject(workspaceKey, name): Promise<projectId>;
+	resolveOrCreateTask(projectId, branch): Promise<taskId>;
+	createEntry(entry): Promise<backendEntryId>;
+	updateEntry(id, entry): Promise<void>;
+	findEntryByMarker(marker, timeRange): Promise<id | null>; // reconciliation
 }
 ```
 
@@ -105,22 +105,22 @@ Concrete implementation: `solidtimeConnector` (resolves + caches `member_id`, em
 
 ### Activity-source status
 
-| Source | Layer-1 role | First-cycle implementation |
-| --- | --- | --- |
-| Editor / cursor / save / active-editor | activity signal | ✅ pass 1 |
-| Tasks / debug | activity signal | ✅ pass 1 |
-| Terminal interactions | activity signal | ✅ pass 1 (shell-execution / terminal events) |
-| Git branch | segment attribution (→ task) | ✅ pass 1 |
-| Git commits | enrichment (description) | ⏳ later (deferred) |
-| AI interactions | classification metadata | ⏳ later (deferred, opt-in) |
+| Source                                 | Layer-1 role                 | First-cycle implementation                    |
+| -------------------------------------- | ---------------------------- | --------------------------------------------- |
+| Editor / cursor / save / active-editor | activity signal              | ✅ pass 1                                     |
+| Tasks / debug                          | activity signal              | ✅ pass 1                                     |
+| Terminal interactions                  | activity signal              | ✅ pass 1 (shell-execution / terminal events) |
+| Git branch                             | segment attribution (→ task) | ✅ pass 1                                     |
+| Git commits                            | enrichment (description)     | ⏳ later (deferred)                           |
+| AI interactions                        | classification metadata      | ⏳ later (deferred, opt-in)                   |
 
 ## 6. Decisions locked (brainstorming)
 
 1. **Backend = solidtime.** **v1 targets solidtime Cloud Free ("Solo")**; self-hosted is the documented fallback, reachable by changing only `apiUrl` + token (no code change). See §2.
 2. **First delivery cycle = local tracking core + solidtime sync.** Git commit enrichment (commit messages, per-commit entries) and AI-activity metadata are deferred.
-2a. **Config namespace = `cvsTimeTracker.*`.** The short `cvs` prefix avoids clashing with other extensions; the name is **independent of the sync connector**. Tracker settings live under `cvsTimeTracker.tracking.*`; connector settings under their own sub-namespace, e.g. `cvsTimeTracker.solidtime.apiUrl` / `cvsTimeTracker.solidtime.organizationId`, with the token in `context.secrets` keyed `cvsTimeTracker.solidtime.apiToken`. Commands share the `cvsTimeTracker.` prefix. *(Say the word if you'd rather the namespace be plain `cvs.*`.)*
+   2a. **Config namespace = `cvsTimeTracker.*`.** The short `cvs` prefix avoids clashing with other extensions; the name is **independent of the sync connector**. Tracker settings live under `cvsTimeTracker.tracking.*`; connector settings under their own sub-namespace, e.g. `cvsTimeTracker.solidtime.apiUrl` / `cvsTimeTracker.solidtime.organizationId`, with the token in `context.secrets` keyed `cvsTimeTracker.solidtime.apiToken`. Commands share the `cvsTimeTracker.` prefix. _(Say the word if you'd rather the namespace be plain `cvs.*`.)_
 3. **Multi-window focus: per-window local only.** Each window tracks while focused (`onDidChangeWindowState`), stops on blur. No focus lease file — the OS enforces single-window focus.
-4. **Centralized outbox, any-instance drain — no leader.** All windows share one outbox in `context.globalStorageUri` (already shared per-extension across windows). Any running window may drain and deliver *any* undelivered segment — so a crashed project's data is delivered by whatever instance is alive. To prevent two windows double-sending the same segment, delivery **atomically claims** a segment before sending (see §5a). No elected leader.
+4. **Centralized outbox, any-instance drain — no leader.** All windows share one outbox in `context.globalStorageUri` (already shared per-extension across windows). Any running window may drain and deliver _any_ undelivered segment — so a crashed project's data is delivered by whatever instance is alive. To prevent two windows double-sending the same segment, delivery **atomically claims** a segment before sending (see §5a). No elected leader.
 5. **Storage: centralized non-native outbox (files + index), behind a `Store` interface.** Chosen over SQLite: a native SQLite module (`better-sqlite3`) risks an Electron-ABI mismatch that fails extension activation — the worst "developer disables it" outcome, and the data volume (a few writes/minute) does not need a DB. SQLite (or `node:sqlite` when stable in the VS Code runtime) stays a future swap behind the same interface. **API token in `context.secrets`** (never settings.json); server URL + org id in settings.
 6. **Entry granularity: one entry per contiguous focus-based work block** (exact intervals; short-gap merge deferred to the sync/aggregation layer). No rollups — no quota to protect.
 7. **Offline-first, purge-after-delivery.** Segments persist to the outbox immediately and stay there until solidtime confirms delivery, then are **purged** (they are undelivered work, not an archive). The outbox survives restarts, crashes, server downtime, and no-internet. **Provisioning and sending happen at delivery time (online)** — tracking offline records `workspaceKey`/`branch`, and project/task are resolved/created only when the server is reachable.
@@ -131,7 +131,7 @@ Concrete implementation: `solidtimeConnector` (resolves + caches `member_id`, em
 
 Two independent analyses of the community extension recommend a **shared focus-owner lease** and a **single sync coordinator/leader**. We deliberately do **not** adopt either:
 
-- **No focus lease.** The double-counting those analyses warn about is a symptom of the *heartbeat-inference* model (computing duration from a stale timestamp across a focus gap). Our design closes a precise segment on blur and never derives an interval from an old timestamp, so the bug cannot occur. The OS focuses one window at a time and each window observes its own focus/blur — per-window tracking is already correct.
+- **No focus lease.** The double-counting those analyses warn about is a symptom of the _heartbeat-inference_ model (computing duration from a stale timestamp across a focus gap). Our design closes a precise segment on blur and never derives an interval from an old timestamp, so the bug cannot occur. The OS focuses one window at a time and each window observes its own focus/blur — per-window tracking is already correct.
 - **No sync coordinator/leader.** Instead of electing a leader over a shared store, any instance drains the centralized outbox and claims each segment atomically before sending (§5a). Per-item claiming + per-segment idempotency (§8) prevent duplicates without a leader.
 
 If a real duplication or race is ever observed in practice, revisit; until then, simpler wins.
@@ -196,7 +196,7 @@ Default timings (tunable): idle timeout 120s, focus-loss grace 250ms, minimum se
 ## 12. Tooling & conventions (matches the reference extension `vscode-send-to-terminal`)
 
 - TypeScript **strict**, module `Node16`, target `ES2022`, `outDir: out`, `rootDir: src`.
-- **ESLint + `eslint-plugin-unicorn` + Prettier** (`eslint-config-prettier` last). *(Unicorn is new vs. the reference; the rest matches.)*
+- **ESLint + `eslint-plugin-unicorn` + Prettier** (`eslint-config-prettier` last). _(Unicorn is new vs. the reference; the rest matches.)_
 - Prettier: `useTabs: true`, `singleQuote: true`, `semi: true`, `trailingComma: es5`, `printWidth: 100`.
 - Tests: Mocha via `@vscode/test-cli` / `@vscode/test-electron`.
 - Packaging: `@vscode/vsce`, output to `tmp/`. Node 22 (`.nvmrc`). Compile with `tsc` (not Bun/esbuild — matches your other extension).

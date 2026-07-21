@@ -12,22 +12,47 @@
 	"engines": {
 		"vscode": "^1.105.0"
 	},
-	"categories": ["Other"],
-	"activationEvents": ["onStartupFinished"],
+	"categories": [
+		"Other"
+	],
+	"activationEvents": [
+		"onStartupFinished"
+	],
 	"main": "./out/extension.js",
 	"contributes": {
 		"commands": [
-			{ "command": "cvsTimeTracker.pause", "title": "cvs Time Tracker: Pause" },
-			{ "command": "cvsTimeTracker.resume", "title": "cvs Time Tracker: Resume" },
-			{ "command": "cvsTimeTracker.showOutput", "title": "cvs Time Tracker: Show Output" }
+			{
+				"command": "cvsTimeTracker.pause",
+				"title": "cvs Time Tracker: Pause"
+			},
+			{
+				"command": "cvsTimeTracker.resume",
+				"title": "cvs Time Tracker: Resume"
+			},
+			{
+				"command": "cvsTimeTracker.showOutput",
+				"title": "cvs Time Tracker: Show Output"
+			}
 		],
 		"configuration": {
 			"title": "cvs Time Tracker",
 			"properties": {
-				"cvsTimeTracker.enabled": { "type": "boolean", "default": true },
-				"cvsTimeTracker.tracking.idleTimeoutSeconds": { "type": "number", "default": 120 },
-				"cvsTimeTracker.tracking.focusLossGraceMilliseconds": { "type": "number", "default": 250 },
-				"cvsTimeTracker.tracking.minimumSegmentSeconds": { "type": "number", "default": 20 }
+				"cvsTimeTracker.enabled": {
+					"type": "boolean",
+					"default": true
+				},
+				"cvsTimeTracker.tracking.idleTimeoutSeconds": {
+					"type": "number",
+					"default": 120
+				},
+				"cvsTimeTracker.tracking.focusLossGraceMilliseconds": {
+					"type": "number",
+					"default": 250
+				},
+				"cvsTimeTracker.tracking.minimumSegmentSeconds": {
+					"type": "number",
+					"default": 20
+				}
 			}
 		}
 	},
@@ -38,7 +63,7 @@
 		"lint": "eslint src",
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
-		"pretest": "npm run compile && npm run lint",
+		"pretest": "npm run clean && npm run compile && npm run lint",
 		"test": "vscode-test",
 		"vscode:prepublish": "npm run compile",
 		"package": "vsce package --out tmp/"
