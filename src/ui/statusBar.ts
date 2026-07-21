@@ -1,66 +1,56 @@
 import * as vscode from 'vscode';
-import { SegmentStore } from '../tracker/storage/segmentStore';
-import { TrackingContext } from '../tracker/types';
 
 type StateKind = 'tracking' | 'idle' | 'unfocused' | 'paused' | 'disabled';
+
+const ICONS: Record<StateKind, string> = {
+	tracking: '$(pulse) tracking',
+	idle: '$(clock) idle',
+	unfocused: '$(debug-pause) unfocused',
+	paused: '$(circle-slash) paused',
+	disabled: '$(circle-slash) off',
+};
 
 export class StatusBar {
 	private readonly item: vscode.StatusBarItem;
 	private kind: StateKind = 'idle';
-	private context: TrackingContext | undefined;
+	private pending = 0;
+	private syncError = false;
 
-	constructor(private readonly store: SegmentStore) {
+	constructor() {
 		this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 3);
 		this.item.command = 'cvsTimeTracker.showOutput';
 		this.item.show();
-		this.refresh();
+		this.render();
 	}
 
-	setState(kind: StateKind, context?: TrackingContext): void {
+	setState(kind: StateKind): void {
 		this.kind = kind;
-		this.context = context;
-		this.refresh();
+		this.render();
 	}
 
-	refresh(): void {
-		const today = new Date().toISOString().slice(0, 10);
-		const total = formatDuration(this.store.totalMillisecondsOn(today));
-		this.item.text = this.renderText(total);
-		this.item.tooltip = "Today's tracked time — click for the log";
+	setPending(count: number): void {
+		this.pending = count;
+		this.render();
+	}
+
+	setSyncError(failing: boolean): void {
+		this.syncError = failing;
+		this.render();
 	}
 
 	dispose(): void {
 		this.item.dispose();
 	}
 
-	private renderText(total: string): string {
-		switch (this.kind) {
-			case 'tracking': {
-				if (!this.context) {
-					return `$(clock) ${total}`;
-				}
-				const branch = this.context.branch ? ` · ${this.context.branch}` : '';
-				return `$(clock) ${this.context.projectName}${branch} · ${total}`;
-			}
-			case 'unfocused': {
-				return `$(debug-pause) ${total}`;
-			}
-			case 'paused': {
-				return `$(circle-slash) paused · ${total}`;
-			}
-			case 'disabled': {
-				return `$(circle-slash) disabled`;
-			}
-			default: {
-				return `$(clock) ${total}`;
-			}
+	private render(): void {
+		const parts = [ICONS[this.kind]];
+		if (this.pending > 0) {
+			parts.push(`$(cloud-upload) ${this.pending}`);
 		}
+		if (this.syncError) {
+			parts.push('$(warning)');
+		}
+		this.item.text = parts.join(' · ');
+		this.item.tooltip = 'cvs Time Tracker — click for the log';
 	}
-}
-
-function formatDuration(ms: number): string {
-	const totalMinutes = Math.floor(ms / 60_000);
-	const hours = Math.floor(totalMinutes / 60);
-	const minutes = totalMinutes % 60;
-	return `${hours}:${String(minutes).padStart(2, '0')}`;
 }

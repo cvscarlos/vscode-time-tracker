@@ -5,13 +5,12 @@ import { watchActivity } from './tracker/activity/activityCollector';
 import { watchFocus } from './tracker/activity/focusController';
 import { SegmentSink, SessionStateMachine } from './tracker/activity/sessionStateMachine';
 import { resolveContext } from './tracker/context/workspaceResolver';
-import { JournalStore } from './tracker/storage/journalStore';
-import { buildSegmentStore } from './tracker/storage/recovery';
-import { SegmentStore } from './tracker/storage/segmentStore';
+import { FileOutboxStore } from './tracker/storage/fileOutboxStore';
 import { LocalSegment } from './tracker/types';
 import { StatusBar } from './ui/statusBar';
 
 const TICK_MS = 5000;
+const CHECKPOINT_MS = 60_000;
 
 let machine: SessionStateMachine | undefined;
 
@@ -20,24 +19,22 @@ export function activate(context: vscode.ExtensionContext): void {
 	context.subscriptions.push(output);
 
 	const config = vscode.workspace.getConfiguration('cvsTimeTracker');
-	const journalDir = path.join(context.globalStorageUri.fsPath, 'journals');
+	const outboxDir = path.join(context.globalStorageUri.fsPath, 'outbox');
 	const instanceId = `${vscode.env.machineId}-${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
-	const journal = new JournalStore(journalDir, instanceId);
+	const store = new FileOutboxStore(outboxDir, instanceId);
 
-	const store: SegmentStore = buildSegmentStore(
-		JournalStore.readInstanceFiles(journalDir, instanceId),
-		instanceId
-	);
-	const statusBar = new StatusBar(store);
+	const statusBar = new StatusBar();
 	context.subscriptions.push({ dispose: () => statusBar.dispose() });
+	statusBar.setPending(store.listUndelivered().length);
+
+	const refreshPending = () => statusBar.setPending(store.listUndelivered().length);
 
 	const sink: SegmentSink = {
-		onOpen: (record) => journal.append(record),
-		onCheckpoint: (record) => journal.append(record),
+		onOpen: (record) => store.append(record),
+		onCheckpoint: (record) => store.append(record),
 		onClose: (segment: LocalSegment) => {
-			journal.append({ type: 'close', segment });
-			store.add(segment);
-			statusBar.refresh();
+			store.append({ type: 'close', segment });
+			refreshPending();
 			output.appendLine(`closed ${segment.projectName} ${segment.activeMilliseconds}ms`);
 		},
 	};
@@ -47,7 +44,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		idleTimeoutMs: config.get<number>('tracking.idleTimeoutSeconds', 120) * 1000,
 		focusLossGraceMs: config.get<number>('tracking.focusLossGraceMilliseconds', 250),
 		minimumSegmentMs: config.get<number>('tracking.minimumSegmentSeconds', 20) * 1000,
-		checkpointIntervalMs: 30_000,
+		checkpointIntervalMs: CHECKPOINT_MS,
 		sink,
 		generateId: () => crypto.randomUUID(),
 	});
@@ -58,17 +55,18 @@ export function activate(context: vscode.ExtensionContext): void {
 	context.subscriptions.push(
 		watchFocus((focused, now) => {
 			machine?.onFocus(focused, now);
-			statusBar.setState(focused ? 'idle' : 'unfocused', resolveContext());
+			statusBar.setState(focused ? 'idle' : 'unfocused');
 		}),
 		watchActivity((now) => {
 			machine?.onActivity(now);
-			statusBar.setState('tracking', resolveContext());
+			statusBar.setState('tracking');
 		}),
 		vscode.window.onDidChangeActiveTextEditor(refreshContext),
 		vscode.workspace.onDidChangeWorkspaceFolders(refreshContext)
 	);
 
 	const timer = setInterval(() => machine?.tick(Date.now()), TICK_MS);
+
 	context.subscriptions.push(
 		{ dispose: () => clearInterval(timer) },
 		vscode.commands.registerCommand('cvsTimeTracker.showOutput', () => output.show()),
@@ -78,7 +76,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		}),
 		vscode.commands.registerCommand('cvsTimeTracker.resume', () => {
 			machine?.resume(Date.now());
-			statusBar.setState('idle', resolveContext());
+			statusBar.setState('idle');
 		})
 	);
 

@@ -1,34 +1,57 @@
 import * as assert from 'node:assert';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import path from 'node:path';
 import * as vscode from 'vscode';
-import { buildSegmentStore } from './tracker/storage/recovery';
-import { JournalRecord } from './tracker/types';
+import { FileOutboxStore } from './tracker/storage/fileOutboxStore';
+import { LocalSegment } from './tracker/types';
+
+const clock = () => new Date('2026-07-21T10:00:00Z');
+
+function seg(id: string): LocalSegment {
+	return {
+		id,
+		instanceId: 'inst',
+		start: '2026-07-21T09:00:00.000Z',
+		end: '2026-07-21T09:30:00.000Z',
+		activeMilliseconds: 1_800_000,
+		workspaceKey: 'ws',
+		projectName: 'proj',
+		branch: 'main',
+		syncState: 'pending',
+	};
+}
 
 suite('activation', () => {
-	test('registers the showOutput command', async () => {
-		const commands = await vscode.commands.getCommands(true);
-		assert.ok(commands.includes('cvsTimeTracker.showOutput'));
-	});
-
 	test('registers commands', async () => {
 		const commands = await vscode.commands.getCommands(true);
 		assert.ok(commands.includes('cvsTimeTracker.showOutput'));
 		assert.ok(commands.includes('cvsTimeTracker.pause'));
+		assert.ok(commands.includes('cvsTimeTracker.resume'));
 	});
 });
 
-suite('recovery integration', () => {
-	test('rebuilds totals from a journal with a crashed segment', () => {
-		const records: JournalRecord[] = [
-			{
-				type: 'open',
-				id: 'seg-crash',
-				start: '2026-07-21T10:00:00.000Z',
-				instanceId: 'inst',
-				context: { workspaceKey: 'ws', projectName: 'proj', branch: 'main' },
-			},
-			{ type: 'checkpoint', id: 'seg-crash', lastActivity: '2026-07-21T10:05:00.000Z' },
-		];
-		const store = buildSegmentStore(records, 'inst');
-		assert.equal(store.totalMillisecondsOn('2026-07-21'), 300_000);
+suite('outbox integration', () => {
+	test('a fresh instance recovers segments written by other window files', () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cvs-int-'));
+		new FileOutboxStore(dir, 'win1', clock).append({ type: 'close', segment: seg('a') });
+		new FileOutboxStore(dir, 'win2', clock).append({
+			type: 'open',
+			id: 'b',
+			start: '2026-07-21T10:00:00.000Z',
+			instanceId: 'win2',
+			context: { workspaceKey: 'ws', projectName: 'proj', branch: 'main' },
+		});
+		new FileOutboxStore(dir, 'win2', clock).append({
+			type: 'checkpoint',
+			id: 'b',
+			lastActivity: '2026-07-21T10:05:00.000Z',
+		});
+		const ids = new FileOutboxStore(dir, 'fresh', clock)
+			.recover()
+			.map((s) => s.id)
+			// eslint-disable-next-line unicorn/no-array-sort -- freshly derived array from map(), safe to mutate in place
+			.sort();
+		assert.deepEqual(ids, ['a', 'b']);
 	});
 });
