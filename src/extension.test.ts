@@ -30,6 +30,10 @@ suite('activation', () => {
 		assert.ok(commands.includes('ntTimeTracker.showOutput'));
 		assert.ok(commands.includes('ntTimeTracker.pause'));
 		assert.ok(commands.includes('ntTimeTracker.resume'));
+		assert.ok(commands.includes('ntTimeTracker.setSolidtimeToken'));
+		assert.ok(commands.includes('ntTimeTracker.deleteSolidtimeToken'));
+		assert.ok(commands.includes('ntTimeTracker.setTimetaggerToken'));
+		assert.ok(commands.includes('ntTimeTracker.deleteTimetaggerToken'));
 	});
 });
 
