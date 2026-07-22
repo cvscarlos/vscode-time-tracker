@@ -49,7 +49,12 @@ export class TimetaggerClient {
 				response.status >= 500
 			);
 		}
-		const result = (await response.json()) as { failed?: string[]; errors?: string[] };
+		let result: { failed?: string[]; errors?: string[] };
+		try {
+			result = (await response.json()) as { failed?: string[]; errors?: string[] };
+		} catch {
+			throw new ConnectorError('timetagger: invalid JSON response', response.status, true);
+		}
 		if ((result.failed?.length ?? 0) > 0 || (result.errors?.length ?? 0) > 0) {
 			throw new ConnectorError(
 				`timetagger rejected records: ${(result.errors ?? []).join(', ')}`,

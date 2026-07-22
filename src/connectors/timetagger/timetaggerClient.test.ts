@@ -72,4 +72,13 @@ suite('TimetaggerClient.putRecords', () => {
 		const client = new TimetaggerClient('https://timetagger.app', 'tok', fetchStub);
 		await assert.rejects(() => client.putRecords([record]), ConnectorError);
 	});
+
+	test('raises a retryable ConnectorError when a 2xx response body is not valid JSON', async () => {
+		const fetchStub = fakeStatusFetch(200, 'not json');
+		const client = new TimetaggerClient('https://timetagger.app', 'tok', fetchStub);
+		await assert.rejects(
+			() => client.putRecords([record]),
+			(e: unknown) => e instanceof ConnectorError && e.retryable === true
+		);
+	});
 });
