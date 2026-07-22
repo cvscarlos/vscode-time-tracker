@@ -1,12 +1,16 @@
 import * as crypto from 'node:crypto';
 import path from 'node:path';
 import * as vscode from 'vscode';
-import { getToken, setToken } from './configuration/secrets';
-import { getSolidtimeConfig } from './configuration/settings';
-import { MappingStore } from './connectors/mappingStore';
+import { Backend, clearToken, getToken, setToken } from './configuration/secrets';
+import { getSolidtimeConfig, getTimetaggerConfig } from './configuration/settings';
 import { SolidtimeConnector } from './connectors/solidtime/solidtimeConnector';
+import { SolidtimeDestination } from './connectors/solidtime/solidtimeDestination';
+import { TimetaggerClient } from './connectors/timetagger/timetaggerClient';
+import { TimetaggerDestination } from './connectors/timetagger/timetaggerDestination';
+import { TimeDestination } from './connectors/destination';
 import { SyncEngine } from './connectors/syncEngine';
 import { coveringCommit, TitleStore } from './connectors/titleStore';
+import { MappingStore } from './connectors/mappingStore';
 import { watchActivity } from './tracker/activity/activityCollector';
 import { watchFocus } from './tracker/activity/focusController';
 import { SegmentSink, SessionStateMachine } from './tracker/activity/sessionStateMachine';
@@ -24,6 +28,26 @@ const SETTLE_MS = 5 * 60_000;
 const MERGE_GAP_MS = 2 * 60_000;
 
 let machine: SessionStateMachine | undefined;
+
+async function promptForToken(
+	context: vscode.ExtensionContext,
+	backend: Backend,
+	title: string,
+	where: string
+): Promise<void> {
+	const existing = await getToken(context, backend);
+	const token = await vscode.window.showInputBox({
+		title,
+		prompt: `Paste a personal API token from ${where}`,
+		password: true,
+		value: existing ? '' : undefined,
+		placeHolder: existing ? '(a token is already set — type to replace)' : undefined,
+	});
+	if (token && token.trim() !== '') {
+		await setToken(context, backend, token.trim());
+		vscode.window.showInformationMessage(`${title.replace(' Token', '')} saved.`);
+	}
+}
 
 export function activate(context: vscode.ExtensionContext): void {
 	const output = vscode.window.createOutputChannel('Time Tracker nt');
@@ -43,75 +67,101 @@ export function activate(context: vscode.ExtensionContext): void {
 	// Count the outbox ONCE at activation, then track it in memory. Re-reading
 	// every outbox file on every close is O(history) on the extension host.
 	// Outbox growth between activations is bounded by pass-2 delivery/compaction.
-	let pendingCount = store.listUndelivered(['solidtime']).length;
+	let pendingCount = store.listUndelivered([]).length;
 	statusBar.setPending(pendingCount);
 
 	const mappings = new MappingStore(context.globalState);
 	const titleStore = new TitleStore(context.globalState);
 
-	const runTitling = async () => {
-		const token = await getToken(context);
-		if (!token) {
-			return; // no token yet — titling resumes once a token is set
+	const buildDestinations = async (): Promise<TimeDestination[]> => {
+		const destinations: TimeDestination[] = [];
+		const solidtimeToken = await getToken(context, 'solidtime');
+		if (solidtimeToken) {
+			const cfg = getSolidtimeConfig();
+			const connector = new SolidtimeConnector(cfg.apiUrl, solidtimeToken, cfg.organizationId);
+			destinations.push(new SolidtimeDestination(connector, mappings));
 		}
-		const cfg = getSolidtimeConfig();
-		const connector = new SolidtimeConnector(cfg.apiUrl, token, cfg.organizationId);
+		const timetaggerToken = await getToken(context, 'timetagger');
+		if (timetaggerToken) {
+			const client = new TimetaggerClient(getTimetaggerConfig().apiUrl, timetaggerToken);
+			destinations.push(new TimetaggerDestination(client));
+		}
+		return destinations;
+	};
+
+	const runTitling = async (destinations: TimeDestination[]) => {
+		if (destinations.length === 0) {
+			return;
+		}
+		const byId = new Map(destinations.map((d) => [d.id, d]));
 		try {
-			const { organizationId } = await connector.resolveMember();
-			const commits = titleStore.commits();
-			for (const e of titleStore.untitled()) {
-				const c = coveringCommit(e.endMs, e.branch, commits);
-				if (c) {
-					await connector.updateEntryDescription(
-						organizationId,
-						e.entryId,
-						`${c.title} [vsc:${e.markerId}]`
-					);
-					await titleStore.markTitled(e.entryId);
-					output.appendLine(`titled ${e.entryId} -> ${c.title}`);
-				}
+			for (const d of destinations) {
+				await d.prepare(new Date(0).toISOString());
 			}
 		} catch (error) {
-			output.appendLine(`titling failed: ${String(error)}`);
+			output.appendLine(`titling prepare failed: ${String(error)}`);
+			return;
+		}
+		const commits = titleStore.commits();
+		for (const e of titleStore.untitled()) {
+			const dest = byId.get(e.destination);
+			if (!dest || !e.branch) {
+				continue;
+			}
+			const c = coveringCommit(e.endMs, e.branch, commits);
+			if (!c) {
+				continue;
+			}
+			try {
+				await dest.retitle(e.ref, c.title, {
+					markerId: e.markerId,
+					projectName: e.projectName,
+					branch: e.branch,
+					startMs: e.startMs,
+					endMs: e.endMs,
+				});
+				await titleStore.markTitled(e.destination, e.ref);
+				output.appendLine(`${dest.label} titled ${e.ref} -> ${c.title}`);
+			} catch (error) {
+				output.appendLine(`${dest.label} titling failed: ${String(error)}`);
+			}
 		}
 	};
 
 	const runSync = async () => {
-		const token = await getToken(context);
-		if (!token) {
+		const destinations = await buildDestinations();
+		if (destinations.length === 0) {
 			statusBar.setSyncError(false);
-			return; // no token yet — track locally, deliver once a token is set
+			return; // no token anywhere — track locally, deliver once a token is set
 		}
-		const cfg = getSolidtimeConfig();
-		const connector = new SolidtimeConnector(cfg.apiUrl, token, cfg.organizationId);
 		const engine = new SyncEngine({
 			store,
-			connector,
-			mappings,
+			destinations,
 			now: () => Date.now(),
 			settleMs: SETTLE_MS,
 			mergeGapMs: MERGE_GAP_MS,
 			log: (m) => output.appendLine(m),
 			onStatus: (pending, error) => {
-				// Reconcile the in-memory counter with the authoritative outbox
-				// count so a later onClose increments from truth, not a stale value.
 				pendingCount = pending;
 				statusBar.setPending(pending);
 				statusBar.setSyncError(error);
 			},
-			onDelivered: (entryId, block) => {
+			onDelivered: (destinationId, ref, block) => {
 				if (block.branch) {
 					void titleStore.recordDelivered({
-						entryId,
-						branch: block.branch,
-						endMs: Date.parse(block.end),
+						destination: destinationId,
+						ref,
 						markerId: block.segmentIds[0],
+						projectName: block.projectName,
+						branch: block.branch,
+						startMs: Date.parse(block.start),
+						endMs: Date.parse(block.end),
 					});
 				}
 			},
 		});
 		await engine.runOnce();
-		await runTitling();
+		await runTitling(destinations);
 	};
 	const syncTimer = setInterval(() => void runSync(), SYNC_MS);
 	context.subscriptions.push({ dispose: () => clearInterval(syncTimer) });
@@ -121,7 +171,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		watchCommits((c) => {
 			void (async () => {
 				await titleStore.addCommit(c);
-				await runTitling();
+				await runTitling(await buildDestinations());
 			})();
 		})
 	);
@@ -133,7 +183,7 @@ export function activate(context: vscode.ExtensionContext): void {
 			await titleStore.addCommit(c);
 		}
 		await titleStore.prune(Date.now(), 48 * 60 * 60 * 1000);
-		await runTitling();
+		await runTitling(await buildDestinations());
 	})();
 
 	const sink: SegmentSink = {
@@ -196,19 +246,29 @@ export function activate(context: vscode.ExtensionContext): void {
 			machine?.resume(Date.now());
 			syncStatus();
 		}),
-		vscode.commands.registerCommand('ntTimeTracker.setApiToken', async () => {
-			const existing = await getToken(context);
-			const token = await vscode.window.showInputBox({
-				title: 'solidtime API Token',
-				prompt: 'Paste a personal API token from solidtime → Profile Settings → Create API Token',
-				password: true,
-				value: existing ? '' : undefined,
-				placeHolder: existing ? '(a token is already set — type to replace)' : undefined,
-			});
-			if (token && token.trim() !== '') {
-				await setToken(context, token.trim());
-				vscode.window.showInformationMessage('solidtime API token saved.');
-			}
+		vscode.commands.registerCommand('ntTimeTracker.setSolidtimeToken', () =>
+			promptForToken(
+				context,
+				'solidtime',
+				'solidtime API Token',
+				'solidtime → Profile Settings → Create API Token'
+			)
+		),
+		vscode.commands.registerCommand('ntTimeTracker.deleteSolidtimeToken', async () => {
+			await clearToken(context, 'solidtime');
+			vscode.window.showInformationMessage('solidtime API token deleted.');
+		}),
+		vscode.commands.registerCommand('ntTimeTracker.setTimetaggerToken', () =>
+			promptForToken(
+				context,
+				'timetagger',
+				'TimeTagger API Token',
+				'timetagger.app → Account → API token'
+			)
+		),
+		vscode.commands.registerCommand('ntTimeTracker.deleteTimetaggerToken', async () => {
+			await clearToken(context, 'timetagger');
+			vscode.window.showInformationMessage('TimeTagger API token deleted.');
 		}),
 		vscode.commands.registerCommand('ntTimeTracker.syncNow', () => void runSync())
 	);

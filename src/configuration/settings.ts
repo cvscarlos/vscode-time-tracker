@@ -12,3 +12,12 @@ export function getSolidtimeConfig(): SolidtimeConfig {
 	const orgRaw = config.get<string>('solidtime.organizationId', '').trim();
 	return { apiUrl, organizationId: orgRaw === '' ? undefined : orgRaw };
 }
+
+export interface TimetaggerConfig {
+	apiUrl: string;
+}
+
+export function getTimetaggerConfig(): TimetaggerConfig {
+	const config = vscode.workspace.getConfiguration('ntTimeTracker');
+	return { apiUrl: config.get<string>('timetagger.apiUrl', 'https://timetagger.app') };
+}

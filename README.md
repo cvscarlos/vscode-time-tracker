@@ -20,7 +20,7 @@ It tracks quietly in the background based on **editor focus and activity** (no m
 
 1. Install the extension.
 2. Get a solidtime **API token**: solidtime → Profile Settings → **Create API Token** (shown once).
-3. In VS Code, run **`Time Tracker nt: Set solidtime API Token`** and paste it. The token is stored in VS Code's encrypted **SecretStorage** (OS keychain) — never in settings or on disk in plaintext.
+3. In VS Code, run **`Time Tracker nt: Set solidtime Token`** and paste it. The token is stored in VS Code's encrypted **SecretStorage** (OS keychain) — never in settings or on disk in plaintext.
 4. That's it — open a git repo and start coding. A few minutes after you stop working on a stretch of code, a time entry appears in solidtime under a project named after your repo, with the task set to your branch.
 
 By default it targets **solidtime Cloud** (`https://app.solidtime.io`). To use a self-hosted instance, set `ntTimeTracker.solidtime.apiUrl`. Nothing else changes.
@@ -38,7 +38,8 @@ By default it targets **solidtime Cloud** (`https://app.solidtime.io`). To use a
 
 ## Commands
 
-- **Time Tracker nt: Set solidtime API Token**
+- **Time Tracker nt: Set solidtime Token** / **Delete solidtime Token**
+- **Time Tracker nt: Set TimeTagger Token** / **Delete TimeTagger Token**
 - **Time Tracker nt: Sync Now**
 - **Time Tracker nt: Pause** / **Resume**
 - **Time Tracker nt: Show Output**

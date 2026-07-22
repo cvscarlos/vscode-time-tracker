@@ -35,8 +35,20 @@
 				"title": "Time Tracker nt: Show Output"
 			},
 			{
-				"command": "ntTimeTracker.setApiToken",
-				"title": "Time Tracker nt: Set solidtime API Token"
+				"command": "ntTimeTracker.setSolidtimeToken",
+				"title": "Time Tracker nt: Set solidtime Token"
+			},
+			{
+				"command": "ntTimeTracker.deleteSolidtimeToken",
+				"title": "Time Tracker nt: Delete solidtime Token"
+			},
+			{
+				"command": "ntTimeTracker.setTimetaggerToken",
+				"title": "Time Tracker nt: Set TimeTagger Token"
+			},
+			{
+				"command": "ntTimeTracker.deleteTimetaggerToken",
+				"title": "Time Tracker nt: Delete TimeTagger Token"
 			},
 			{
 				"command": "ntTimeTracker.syncNow",
@@ -72,6 +84,11 @@
 					"type": "string",
 					"default": "",
 					"description": "solidtime organization id. Leave blank to use your first organization."
+				},
+				"ntTimeTracker.timetagger.apiUrl": {
+					"type": "string",
+					"default": "https://timetagger.app",
+					"markdownDescription": "TimeTagger server URL. Leave as the public app, or point to a self-hosted instance. The extension only sends to TimeTagger when a TimeTagger API token is set."
 				}
 			}
 		}
