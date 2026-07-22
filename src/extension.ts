@@ -23,6 +23,9 @@ import { StatusBar } from './ui/statusBar';
 
 const TICK_MS = 5000;
 const CHECKPOINT_MS = 60_000;
+// After this long without activity, a still-counting segment reads as
+// "tracking (idle)" in the status bar — a heads-up before the idle cap stops it.
+const IDLE_HINT_MS = 60_000;
 const SYNC_MS = 3 * 60_000;
 const SETTLE_MS = 5 * 60_000;
 const MERGE_GAP_MS = 2 * 60_000;
@@ -202,6 +205,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		instanceId,
 		idleTimeoutMs: config.get<number>('tracking.idleTimeoutSeconds', 300) * 1000,
 		focusLossToleranceMs: config.get<number>('tracking.focusLossToleranceSeconds', 30) * 1000,
+		idleHintMs: IDLE_HINT_MS,
 		minimumSegmentMs,
 		checkpointIntervalMs: CHECKPOINT_MS,
 		sink,
@@ -213,7 +217,7 @@ export function activate(context: vscode.ExtensionContext): void {
 	const refreshContext = () => machine?.setContext(resolveContext());
 	const syncStatus = () => {
 		if (machine) {
-			statusBar.setState(machine.currentStatus());
+			statusBar.setState(machine.currentStatus(Date.now()));
 		}
 	};
 	context.subscriptions.push(

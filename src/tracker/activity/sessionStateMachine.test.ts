@@ -27,6 +27,7 @@ function make(sink: SegmentSink): SessionStateMachine {
 		instanceId: 'inst',
 		idleTimeoutMs: 120_000,
 		focusLossToleranceMs: 25_000,
+		idleHintMs: 60_000,
 		minimumSegmentMs: 20_000,
 		checkpointIntervalMs: 30_000,
 		sink,
@@ -58,7 +59,7 @@ suite('SessionStateMachine', () => {
 		const m = make(sink);
 		m.onFocus(true, 0); // no context set
 		assert.equal(sink.opens.length, 0);
-		assert.equal(m.currentStatus(), 'idle');
+		assert.equal(m.currentStatus(0), 'idle');
 	});
 
 	test('blur then refocus within tolerance does not close', () => {
@@ -144,19 +145,31 @@ suite('SessionStateMachine', () => {
 		const sink = new RecordingSink();
 		const m = make(sink);
 		m.setContext(ctx);
-		assert.equal(m.currentStatus(), 'unfocused'); // not focused, no segment yet
+		assert.equal(m.currentStatus(0), 'unfocused'); // not focused, no segment yet
 		m.onFocus(true, 0);
-		assert.equal(m.currentStatus(), 'tracking'); // focus alone starts tracking
+		assert.equal(m.currentStatus(0), 'tracking'); // focus alone starts tracking
 		m.pause(2000);
-		assert.equal(m.currentStatus(), 'paused');
+		assert.equal(m.currentStatus(2000), 'paused');
 		m.resume(3000);
-		assert.equal(m.currentStatus(), 'idle'); // focused, but pause closed the segment
+		assert.equal(m.currentStatus(3000), 'idle'); // focused, but pause closed the segment
 		m.onActivity(3500);
-		assert.equal(m.currentStatus(), 'tracking'); // activity reopens
+		assert.equal(m.currentStatus(3500), 'tracking'); // activity reopens
 		m.onFocus(false, 4000);
-		assert.equal(m.currentStatus(), 'grace'); // within the look-away tolerance
+		assert.equal(m.currentStatus(4000), 'grace'); // within the look-away tolerance
 		m.tick(4000 + 25_000 + 1);
-		assert.equal(m.currentStatus(), 'unfocused');
+		assert.equal(m.currentStatus(4000 + 25_000 + 1), 'unfocused');
+	});
+
+	test('a quiet but still-counting segment reads tracking-idle before the cap', () => {
+		const sink = new RecordingSink();
+		const m = make(sink);
+		m.setContext(ctx);
+		m.onFocus(true, 0); // opens at 0, no further activity
+		assert.equal(m.currentStatus(30_000), 'tracking'); // 30s < 60s idle hint
+		assert.equal(m.currentStatus(61_000), 'tracking-idle'); // quiet >= 60s, still counting
+		assert.equal(sink.closes.length, 0); // not yet at the 120s cap
+		m.onActivity(61_500);
+		assert.equal(m.currentStatus(61_600), 'tracking'); // activity clears the idle hint
 	});
 
 	test('currentStatus shows grace during the look-away tolerance, then unfocused once closed', () => {
@@ -165,12 +178,12 @@ suite('SessionStateMachine', () => {
 		m.setContext(ctx);
 		m.onFocus(true, 0);
 		m.onActivity(1000);
-		assert.equal(m.currentStatus(), 'tracking');
+		assert.equal(m.currentStatus(1000), 'tracking');
 		m.onFocus(false, 30_000);
-		assert.equal(m.currentStatus(), 'grace');
+		assert.equal(m.currentStatus(30_000), 'grace');
 		m.tick(30_000 + 25_000 + 1);
 		assert.equal(sink.closes.length, 1);
-		assert.equal(m.currentStatus(), 'unfocused');
+		assert.equal(m.currentStatus(30_000 + 25_000 + 1), 'unfocused');
 	});
 
 	test('a checkpoint is emitted after the checkpoint interval', () => {

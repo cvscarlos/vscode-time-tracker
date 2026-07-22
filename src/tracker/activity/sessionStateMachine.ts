@@ -10,6 +10,10 @@ export interface StateMachineOptions {
 	instanceId: string;
 	idleTimeoutMs: number;
 	focusLossToleranceMs: number;
+	// After this long with no activity (but before idleTimeoutMs closes it), the
+	// still-open segment is reported as 'tracking-idle' — a heads-up that we are
+	// coasting on the idle credit, not actively tracking.
+	idleHintMs: number;
 	minimumSegmentMs: number;
 	checkpointIntervalMs: number;
 	sink: SegmentSink;
@@ -113,7 +117,9 @@ export class SessionStateMachine {
 		this.finalize(end);
 	}
 
-	currentStatus(): 'tracking' | 'grace' | 'idle' | 'unfocused' | 'paused' | 'disabled' {
+	currentStatus(
+		now: number
+	): 'tracking' | 'tracking-idle' | 'grace' | 'idle' | 'unfocused' | 'paused' | 'disabled' {
 		if (!this.enabled) {
 			return 'disabled';
 		}
@@ -126,7 +132,9 @@ export class SessionStateMachine {
 			return 'grace';
 		}
 		if (this.open) {
-			return 'tracking';
+			// Still counting toward the idle cap, but quiet for a while — surface it
+			// so the user knows they have gone idle and tracking will stop soon.
+			return now - this.open.lastActivity >= this.options.idleHintMs ? 'tracking-idle' : 'tracking';
 		}
 		if (!this.focused) {
 			return 'unfocused';

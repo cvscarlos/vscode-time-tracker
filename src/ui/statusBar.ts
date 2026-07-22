@@ -1,9 +1,11 @@
 import * as vscode from 'vscode';
 
-type StateKind = 'tracking' | 'grace' | 'idle' | 'unfocused' | 'paused' | 'disabled';
+type StateKind =
+	'tracking' | 'tracking-idle' | 'grace' | 'idle' | 'unfocused' | 'paused' | 'disabled';
 
 const ICONS: Record<StateKind, string> = {
 	tracking: '$(pulse) tracking',
+	'tracking-idle': '$(pulse) tracking (idle)',
 	grace: '$(watch) tracking (grace)',
 	idle: '$(clock) idle',
 	unfocused: '$(debug-pause) unfocused',
