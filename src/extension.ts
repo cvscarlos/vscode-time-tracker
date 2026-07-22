@@ -250,6 +250,29 @@ export function activate(context: vscode.ExtensionContext): void {
 			machine?.resume(Date.now());
 			syncStatus();
 		}),
+		vscode.commands.registerCommand('ntTimeTracker.discardIdle', async () => {
+			const idleMs = machine?.idleMillis(Date.now());
+			if (idleMs === undefined || idleMs < IDLE_HINT_MS) {
+				await vscode.window.showInformationMessage(
+					'Time Tracker nt: no idle time to discard right now.'
+				);
+				return;
+			}
+			const mins = Math.max(1, Math.round(idleMs / 60_000));
+			const choice = await vscode.window.showInformationMessage(
+				`You've been idle about ${mins} min. Discard that idle time? Your active work is kept.`,
+				{ modal: true },
+				'Discard idle',
+				'Show log'
+			);
+			if (choice === 'Discard idle') {
+				machine?.discardIdle();
+				output.appendLine(`discarded ~${mins} min of idle time`);
+				syncStatus();
+			} else if (choice === 'Show log') {
+				output.show();
+			}
+		}),
 		vscode.commands.registerCommand('ntTimeTracker.setSolidtimeToken', () =>
 			promptForToken(
 				context,

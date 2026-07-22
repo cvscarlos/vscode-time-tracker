@@ -142,6 +142,22 @@ export class SessionStateMachine {
 		return 'idle';
 	}
 
+	/** Milliseconds since the open segment's last activity, or undefined if none is open. */
+	idleMillis(now: number): number | undefined {
+		return this.open ? now - this.open.lastActivity : undefined;
+	}
+
+	/**
+	 * Trim the current segment back to its last activity, dropping the idle grace
+	 * accrued since — used when the idle time was unintentional. The active portion
+	 * is still delivered; the idle tail is discarded. No-op if nothing is open.
+	 */
+	discardIdle(): void {
+		if (this.open) {
+			this.finalize(this.open.lastActivity);
+		}
+	}
+
 	private canTrack(): boolean {
 		return this.enabled && !this.paused && this.focused && this.context !== undefined;
 	}

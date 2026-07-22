@@ -172,6 +172,29 @@ suite('SessionStateMachine', () => {
 		assert.equal(m.currentStatus(61_600), 'tracking'); // activity clears the idle hint
 	});
 
+	test('idleMillis reports time since last activity, or undefined when nothing is open', () => {
+		const sink = new RecordingSink();
+		const m = make(sink);
+		assert.equal(m.idleMillis(1000), undefined);
+		m.setContext(ctx);
+		m.onFocus(true, 0);
+		m.onActivity(1000);
+		assert.equal(m.idleMillis(61_000), 60_000);
+	});
+
+	test('discardIdle trims the open segment to the last activity, dropping the idle grace', () => {
+		const sink = new RecordingSink();
+		const m = make(sink);
+		m.setContext(ctx);
+		m.onFocus(true, 0);
+		m.onActivity(30_000); // real work up to 30s
+		m.discardIdle(); // user was idle after that; discard the idle tail
+		assert.equal(sink.closes.length, 1);
+		assert.equal(sink.closes[0].end, iso(30_000)); // trimmed to last activity
+		assert.equal(sink.closes[0].activeMilliseconds, 30_000); // 0 -> 30_000
+		assert.equal(m.idleMillis(40_000), undefined); // segment closed
+	});
+
 	test('currentStatus shows grace during the look-away tolerance, then unfocused once closed', () => {
 		const sink = new RecordingSink();
 		const m = make(sink);

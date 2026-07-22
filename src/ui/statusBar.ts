@@ -28,6 +28,10 @@ export class StatusBar {
 
 	setState(kind: StateKind): void {
 		this.kind = kind;
+		// While idle-but-still-counting, a click discards the idle time; otherwise
+		// it opens the log.
+		this.item.command =
+			kind === 'tracking-idle' ? 'ntTimeTracker.discardIdle' : 'ntTimeTracker.showOutput';
 		this.render();
 	}
 
@@ -54,6 +58,9 @@ export class StatusBar {
 			parts.push('$(warning)');
 		}
 		this.item.text = parts.join(' · ');
-		this.item.tooltip = 'Time Tracker nt — click for the log';
+		this.item.tooltip =
+			this.kind === 'tracking-idle'
+				? "You've gone idle — click to discard this idle time (your active work is kept)"
+				: 'Time Tracker nt — click for the log';
 	}
 }

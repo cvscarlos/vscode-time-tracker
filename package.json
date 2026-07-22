@@ -31,6 +31,10 @@
 				"title": "Time Tracker nt: Resume"
 			},
 			{
+				"command": "ntTimeTracker.discardIdle",
+				"title": "Time Tracker nt: Discard Current Idle Time"
+			},
+			{
 				"command": "ntTimeTracker.showOutput",
 				"title": "Time Tracker nt: Show Output"
 			},
