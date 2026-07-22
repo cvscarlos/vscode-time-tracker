@@ -4,13 +4,21 @@ import { MappingStore } from '../mappingStore';
 
 export interface SolidtimeConnectorLike {
 	resolveMember(): Promise<{ organizationId: string; memberId: string }>;
-	listEntryMarkers(organizationId: string, memberId: string, sinceIso: string): Promise<Set<string>>;
+	listEntryMarkers(
+		organizationId: string,
+		memberId: string,
+		sinceIso: string
+	): Promise<Set<string>>;
 	findProjectByName(organizationId: string, name: string): Promise<string | null>;
 	createProject(organizationId: string, name: string): Promise<string>;
 	findTaskByName(organizationId: string, projectId: string, name: string): Promise<string | null>;
 	createTask(organizationId: string, projectId: string, name: string): Promise<string>;
 	createEntry(organizationId: string, memberId: string, entry: EntryInput): Promise<string>;
-	updateEntryDescription(organizationId: string, entryId: string, description: string): Promise<void>;
+	updateEntryDescription(
+		organizationId: string,
+		entryId: string,
+		description: string
+	): Promise<void>;
 }
 
 export class SolidtimeDestination implements TimeDestination {
