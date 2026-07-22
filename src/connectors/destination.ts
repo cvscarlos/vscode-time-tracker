@@ -7,6 +7,8 @@ export interface TitleCtx {
 	markerId: string;
 	projectName: string;
 	branch?: string;
+	startMs: number;
+	endMs: number;
 }
 
 export interface TimeDestination {
