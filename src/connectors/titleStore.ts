@@ -1,10 +1,13 @@
 import { CommitInfo } from '../tracker/context/gitCommits';
 
 export interface DeliveredEntry {
-	entryId: string;
-	branch: string;
-	endMs: number;
+	destination: string;
+	ref: string;
 	markerId: string;
+	projectName: string;
+	branch?: string;
+	startMs: number;
+	endMs: number;
 	titled: boolean;
 }
 
@@ -25,7 +28,11 @@ export class TitleStore {
 	constructor(private readonly memento: MementoLike) {}
 
 	recordDelivered(entry: Omit<DeliveredEntry, 'titled'>): Thenable<void> {
-		const entries = this.readEntries().filter((e) => e.entryId !== entry.entryId);
+		if (entry.ref === '') {
+			return Promise.resolve();
+		}
+		const key = `${entry.destination}:${entry.ref}`;
+		const entries = this.readEntries().filter((e) => `${e.destination}:${e.ref}` !== key);
 		entries.push({ ...entry, titled: false });
 		return this.memento.update(ENTRIES_KEY, entries);
 	}
@@ -44,9 +51,9 @@ export class TitleStore {
 		return this.readCommits();
 	}
 
-	markTitled(entryId: string): Thenable<void> {
+	markTitled(destination: string, ref: string): Thenable<void> {
 		const entries = this.readEntries().map((e) =>
-			e.entryId === entryId ? { ...e, titled: true } : e
+			e.destination === destination && e.ref === ref ? { ...e, titled: true } : e
 		);
 		return this.memento.update(ENTRIES_KEY, entries);
 	}
@@ -62,7 +69,25 @@ export class TitleStore {
 	}
 
 	private readEntries(): DeliveredEntry[] {
-		return this.memento.get<DeliveredEntry[]>(ENTRIES_KEY) ?? [];
+		const raw = this.memento.get<Array<Record<string, unknown>>>(ENTRIES_KEY) ?? [];
+		return raw.map((e) => this.migrate(e));
+	}
+
+	private migrate(e: Record<string, unknown>): DeliveredEntry {
+		// Old shape: { entryId, branch, endMs, markerId, titled } (solidtime only).
+		if (typeof e.destination === 'string' && typeof e.ref === 'string') {
+			return e as unknown as DeliveredEntry;
+		}
+		return {
+			destination: 'solidtime',
+			ref: String(e.entryId ?? ''),
+			markerId: String(e.markerId ?? ''),
+			projectName: '',
+			branch: e.branch as string | undefined,
+			startMs: 0,
+			endMs: Number(e.endMs ?? 0),
+			titled: Boolean(e.titled),
+		};
 	}
 
 	private readCommits(): CommitInfo[] {
