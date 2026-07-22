@@ -94,13 +94,13 @@ export function activate(context: vscode.ExtensionContext): void {
 			return;
 		}
 		const byId = new Map(destinations.map((d) => [d.id, d]));
-		try {
-			for (const d of destinations) {
+		for (const d of destinations) {
+			try {
 				await d.prepare(new Date(0).toISOString());
+			} catch (error) {
+				byId.delete(d.id); // isolate: a failing backend must not block the others' titling
+				output.appendLine(`${d.label} titling prepare failed: ${String(error)}`);
 			}
-		} catch (error) {
-			output.appendLine(`titling prepare failed: ${String(error)}`);
-			return;
 		}
 		const commits = titleStore.commits();
 		for (const e of titleStore.untitled()) {
