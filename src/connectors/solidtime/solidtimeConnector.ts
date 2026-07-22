@@ -1,4 +1,5 @@
-import { ConnectorError, EntryInput, markerFor, TimeSyncConnector } from '../connector';
+import { ConnectorError, EntryInput, markerFor } from '../connector';
+import { SolidtimeConnectorLike } from './solidtimeDestination';
 
 interface Membership {
 	id: string;
@@ -14,7 +15,7 @@ function toSolidtimeDate(iso: string): string {
 	return new Date(iso).toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
-export class SolidtimeConnector implements TimeSyncConnector {
+export class SolidtimeConnector implements SolidtimeConnectorLike {
 	private readonly fetchFn: typeof fetch;
 
 	constructor(
@@ -42,7 +43,7 @@ export class SolidtimeConnector implements TimeSyncConnector {
 		const data = await this.get<{ data: { id: string; name: string }[] }>(
 			`/api/v1/organizations/${organizationId}/projects`
 		);
-		// eslint-disable-next-line unicorn/no-null -- TimeSyncConnector contract uses null for "not found"
+		// eslint-disable-next-line unicorn/no-null -- SolidtimeConnectorLike contract uses null for "not found"
 		return data.data.find((p) => p.name === name)?.id ?? null;
 	}
 
@@ -63,7 +64,7 @@ export class SolidtimeConnector implements TimeSyncConnector {
 		const data = await this.get<{ data: { id: string; name: string; project_id: string }[] }>(
 			`/api/v1/organizations/${organizationId}/tasks?project_id=${projectId}`
 		);
-		// eslint-disable-next-line unicorn/no-null -- TimeSyncConnector contract uses null for "not found"
+		// eslint-disable-next-line unicorn/no-null -- SolidtimeConnectorLike contract uses null for "not found"
 		return data.data.find((t) => t.name === name && t.project_id === projectId)?.id ?? null;
 	}
 
