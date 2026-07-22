@@ -1,7 +1,7 @@
 import { DeliveryBlock } from './aggregate';
-import { ConnectorError, markerFor } from './connector';
 
-export { DeliveryBlock, ConnectorError, markerFor };
+export { DeliveryBlock } from './aggregate';
+export { ConnectorError, markerFor } from './connector';
 
 export interface TitleCtx {
 	markerId: string;
