@@ -35,20 +35,30 @@ function make(sink: SegmentSink): SessionStateMachine {
 }
 
 suite('SessionStateMachine', () => {
-	test('focus + activity opens a segment; blur beyond tolerance closes at blur time', () => {
+	test('focus alone opens a segment; blur beyond tolerance closes at blur time', () => {
 		const sink = new RecordingSink();
 		const m = make(sink);
 		m.setContext(ctx);
 		m.onFocus(true, 1000);
-		m.onActivity(2000);
+		// Focus starts tracking with no activity required.
 		assert.equal(sink.opens.length, 1);
-		assert.equal(sink.opens[0].start, iso(2000));
+		assert.equal(sink.opens[0].start, iso(1000));
+		m.onActivity(2000); // updates last activity; does not open a second segment
+		assert.equal(sink.opens.length, 1);
 		m.onFocus(false, 60_000);
 		m.tick(60_000 + 25_000 + 1);
 		assert.equal(sink.closes.length, 1);
 		assert.equal(sink.closes[0].end, iso(60_000));
-		assert.equal(sink.closes[0].activeMilliseconds, 58_000);
+		assert.equal(sink.closes[0].activeMilliseconds, 59_000); // 60_000 - 1000 (focus start)
 		assert.equal(sink.closes[0].branch, 'main');
+	});
+
+	test('focus without a project context does not start tracking (stays idle)', () => {
+		const sink = new RecordingSink();
+		const m = make(sink);
+		m.onFocus(true, 0); // no context set
+		assert.equal(sink.opens.length, 0);
+		assert.equal(m.currentStatus(), 'idle');
 	});
 
 	test('blur then refocus within tolerance does not close', () => {
@@ -63,17 +73,32 @@ suite('SessionStateMachine', () => {
 		assert.equal(sink.closes.length, 0);
 	});
 
-	test('idle closes the segment at last activity', () => {
+	test('an idle window closes crediting up to the idle cap past the last activity', () => {
 		const sink = new RecordingSink();
 		const m = make(sink);
 		m.setContext(ctx);
 		m.onFocus(true, 0);
-		m.onActivity(1000);
 		m.onActivity(25_000);
 		m.tick(25_000 + 120_001);
 		assert.equal(sink.closes.length, 1);
-		assert.equal(sink.closes[0].end, iso(25_000));
-		assert.equal(sink.closes[0].activeMilliseconds, 24_000);
+		// Ends at last activity + idle cap (25_000 + 120_000), not at last activity.
+		assert.equal(sink.closes[0].end, iso(145_000));
+		assert.equal(sink.closes[0].activeMilliseconds, 145_000);
+	});
+
+	test('a focused but inactive window still counts up to the idle cap, then resumes on activity', () => {
+		const sink = new RecordingSink();
+		const m = make(sink);
+		m.setContext(ctx);
+		m.onFocus(true, 0); // reading/reviewing: focused, zero editor activity
+		assert.equal(sink.opens.length, 1);
+		m.tick(120_001); // 120s (test cap) of no activity
+		assert.equal(sink.closes.length, 1);
+		assert.equal(sink.closes[0].end, iso(120_000)); // credited up to the cap
+		assert.equal(sink.closes[0].activeMilliseconds, 120_000);
+		m.onActivity(130_000); // activity resumes tracking with a fresh segment
+		assert.equal(sink.opens.length, 2);
+		assert.equal(sink.opens[1].start, iso(130_000));
 	});
 
 	test('activity just before the idle timeout keeps the segment open', () => {
@@ -109,7 +134,8 @@ suite('SessionStateMachine', () => {
 		m.onActivity(1000);
 		m.onFocus(false, 5000);
 		// tick past the blur tolerance so the segment finalizes: active time is
-		// 5000 - 1000 = 4000ms < the 20s minimum, so it is dropped (no close emitted).
+		// 5000 - 0 = 5000ms (focus start to blur) < the 20s minimum, so it is
+		// dropped (no close emitted).
 		m.tick(5000 + 25_000 + 1);
 		assert.equal(sink.closes.length, 0);
 	});
@@ -118,20 +144,22 @@ suite('SessionStateMachine', () => {
 		const sink = new RecordingSink();
 		const m = make(sink);
 		m.setContext(ctx);
+		assert.equal(m.currentStatus(), 'unfocused'); // not focused, no segment yet
 		m.onFocus(true, 0);
-		assert.equal(m.currentStatus(), 'idle');
-		m.onActivity(1000);
-		assert.equal(m.currentStatus(), 'tracking');
+		assert.equal(m.currentStatus(), 'tracking'); // focus alone starts tracking
 		m.pause(2000);
 		assert.equal(m.currentStatus(), 'paused');
 		m.resume(3000);
-		assert.equal(m.currentStatus(), 'idle');
+		assert.equal(m.currentStatus(), 'idle'); // focused, but pause closed the segment
+		m.onActivity(3500);
+		assert.equal(m.currentStatus(), 'tracking'); // activity reopens
 		m.onFocus(false, 4000);
-		m.tick(4300);
+		assert.equal(m.currentStatus(), 'grace'); // within the look-away tolerance
+		m.tick(4000 + 25_000 + 1);
 		assert.equal(m.currentStatus(), 'unfocused');
 	});
 
-	test('currentStatus stays tracking through a blur within tolerance, then reports unfocused once closed', () => {
+	test('currentStatus shows grace during the look-away tolerance, then unfocused once closed', () => {
 		const sink = new RecordingSink();
 		const m = make(sink);
 		m.setContext(ctx);
@@ -139,7 +167,7 @@ suite('SessionStateMachine', () => {
 		m.onActivity(1000);
 		assert.equal(m.currentStatus(), 'tracking');
 		m.onFocus(false, 30_000);
-		assert.equal(m.currentStatus(), 'tracking');
+		assert.equal(m.currentStatus(), 'grace');
 		m.tick(30_000 + 25_000 + 1);
 		assert.equal(sink.closes.length, 1);
 		assert.equal(m.currentStatus(), 'unfocused');

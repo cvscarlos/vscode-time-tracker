@@ -47,6 +47,12 @@ export class SessionStateMachine {
 	onFocus(focused: boolean, now: number): void {
 		this.focused = focused;
 		this.blurAt = focused ? undefined : now;
+		// Focus alone starts tracking — no edit required — so reading or reviewing
+		// (e.g. an AI agent's terminal output) counts as work. The idle cap in
+		// tick() still stops a focused-but-inactive window after idleTimeoutMs.
+		if (focused && !this.open && this.canTrack()) {
+			this.openSegment(now);
+		}
 	}
 
 	onActivity(now: number): void {
@@ -70,7 +76,10 @@ export class SessionStateMachine {
 			return;
 		}
 		if (now - this.open.lastActivity >= this.options.idleTimeoutMs) {
-			this.finalize(this.open.lastActivity);
+			// Credit up to the idle cap past the last activity, then stop: a focused
+			// reading/analysis session (no editor events) still counts, but only up
+			// to idleTimeoutMs — an abandoned-but-focused window can't bank forever.
+			this.finalize(this.open.lastActivity + this.options.idleTimeoutMs);
 			return;
 		}
 		if (now - this.open.lastCheckpointAt >= this.options.checkpointIntervalMs) {
@@ -104,12 +113,17 @@ export class SessionStateMachine {
 		this.finalize(end);
 	}
 
-	currentStatus(): 'tracking' | 'idle' | 'unfocused' | 'paused' | 'disabled' {
+	currentStatus(): 'tracking' | 'grace' | 'idle' | 'unfocused' | 'paused' | 'disabled' {
 		if (!this.enabled) {
 			return 'disabled';
 		}
 		if (this.paused) {
 			return 'paused';
+		}
+		if (this.blurAt !== undefined && this.open) {
+			// Focus was lost but we are still within the look-away tolerance: the
+			// segment is held open, so we are still counting for now.
+			return 'grace';
 		}
 		if (this.open) {
 			return 'tracking';

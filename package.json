@@ -64,12 +64,13 @@
 				},
 				"ntTimeTracker.tracking.idleTimeoutSeconds": {
 					"type": "number",
-					"default": 120
+					"default": 300,
+					"description": "Safety cap: seconds a focused window keeps counting with no editor activity before tracking stops. Reading or reviewing (with no edits) still counts up to this cap; beyond it a focused-but-idle window stops. Any activity resumes tracking. Default 300 (5 min), matching tools like Clockify and Paymo."
 				},
 				"ntTimeTracker.tracking.focusLossToleranceSeconds": {
 					"type": "number",
-					"default": 25,
-					"description": "Seconds a brief look-away is tolerated before a work segment closes."
+					"default": 30,
+					"description": "Seconds a look-away (VS Code losing focus) is tolerated before the work segment closes; the status bar shows 'tracking (grace)' during this window."
 				},
 				"ntTimeTracker.tracking.minimumSegmentSeconds": {
 					"type": "number",
