@@ -1,26 +1,26 @@
 import { aggregate, DeliveryBlock } from './aggregate';
-import { ConnectorError, EntryInput, TimeSyncConnector } from './connector';
-import { MappingStore } from './mappingStore';
+import { ConnectorError } from './connector';
+import { TimeDestination } from './destination';
 import { Store } from '../tracker/storage/store';
 
 export interface SyncEngineDeps {
 	store: Store;
-	connector: TimeSyncConnector;
-	mappings: MappingStore;
+	destinations: TimeDestination[];
 	now: () => number;
 	settleMs: number;
 	mergeGapMs: number;
 	log: (message: string) => void;
 	onStatus: (pending: number, error: boolean) => void;
-	onDelivered?: (entryId: string, block: DeliveryBlock) => void;
+	onDelivered?: (destinationId: string, ref: string, block: DeliveryBlock) => void;
 }
 
 export class SyncEngine {
 	constructor(private readonly deps: SyncEngineDeps) {}
 
 	async runOnce(): Promise<void> {
-		const { store, connector, log, onStatus } = this.deps;
-		const undelivered = store.listUndelivered(['solidtime']);
+		const { store, destinations, log, onStatus } = this.deps;
+		const enabledIds = destinations.map((d) => d.id);
+		const undelivered = store.listUndelivered(enabledIds);
 		const blocks = aggregate(undelivered, {
 			nowMs: this.deps.now(),
 			settleMs: this.deps.settleMs,
@@ -28,125 +28,71 @@ export class SyncEngine {
 		});
 		log(`sync: ${undelivered.length} undelivered, ${blocks.length} block(s) ready`);
 		onStatus(undelivered.length, false);
-		if (blocks.length === 0) {
-			return; // segments held until settled
+		if (blocks.length === 0 || destinations.length === 0) {
+			return;
 		}
-		try {
-			const { organizationId, memberId } = await connector.resolveMember();
-			let since = blocks[0].start;
-			for (const block of blocks) {
-				if (block.start < since) {
-					since = block.start;
+
+		let since = blocks[0].start;
+		for (const block of blocks) {
+			if (block.start < since) {
+				since = block.start;
+			}
+		}
+
+		let anyError = false;
+		const active: TimeDestination[] = [];
+		for (const dest of destinations) {
+			try {
+				await dest.prepare(since);
+				active.push(dest);
+			} catch (error) {
+				anyError = true;
+				log(`${dest.label} unavailable: ${String(error)}${this.authHint(dest, error)}`);
+			}
+		}
+
+		const disabled = new Set<string>();
+		for (const block of blocks) {
+			const markerId = block.segmentIds[0];
+			if (!store.claim(markerId)) {
+				continue;
+			}
+			for (const dest of active) {
+				if (disabled.has(dest.id) || store.isDelivered(markerId, dest.id)) {
+					continue;
+				}
+				try {
+					const ref = await dest.deliver(block);
+					this.deps.onDelivered?.(dest.id, ref, block);
+					for (const id of block.segmentIds) {
+						store.markDelivered(id, dest.id);
+					}
+					log(
+						`${dest.label} delivered ${block.projectName} ${block.branch ?? ''} ${block.start}..${block.end}`
+					);
+				} catch (error) {
+					if (error instanceof ConnectorError && error.retryable) {
+						anyError = true;
+						disabled.add(dest.id); // stop hammering a down backend this run
+					} else {
+						log(`${dest.label} skipped ${markerId}: ${String(error)}`);
+					}
 				}
 			}
-			const present = await connector.listEntryMarkers(organizationId, memberId, since);
-
-			for (const block of blocks) {
-				await this.deliverBlock(block, organizationId, memberId, present);
-			}
-			store.compact(['solidtime']);
-			onStatus(store.listUndelivered(['solidtime']).length, false);
-		} catch (error) {
-			const authHint =
-				error instanceof ConnectorError && error.status === 401
-					? ' (check your API token: "Time Tracker nt: Set solidtime API Token")'
-					: '';
-			log(`sync failed: ${String(error)}${authHint}`);
-			onStatus(store.listUndelivered(['solidtime']).length, true);
 		}
+
+		store.compact(enabledIds);
+		onStatus(store.listUndelivered(enabledIds).length, anyError);
 	}
 
-	private async deliverBlock(
-		block: DeliveryBlock,
-		organizationId: string,
-		memberId: string,
-		present: Set<string>
-	): Promise<void> {
-		const { store, connector, log } = this.deps;
-		const markerId = block.segmentIds[0];
-		if (!store.claim(markerId)) {
-			return;
+	private authHint(dest: TimeDestination, error: unknown): string {
+		if (error instanceof ConnectorError && error.status === 401) {
+			const command =
+				dest.id === 'timetagger'
+					? 'Time Tracker nt: Set TimeTagger Token'
+					: 'Time Tracker nt: Set solidtime Token';
+			return ` (check your API token: "${command}")`;
 		}
-		// Re-check delivery AFTER claiming: a delivered tombstone does not
-		// block a claim, so another window may have delivered this block
-		// between our listUndelivered() snapshot and this claim. Sending
-		// again would create a duplicate.
-		if (store.isDelivered(markerId, 'solidtime') || present.has(markerId)) {
-			for (const id of block.segmentIds) {
-				store.markDelivered(id, 'solidtime');
-			}
-			return;
-		}
-		try {
-			const projectId = await this.resolveProject(
-				organizationId,
-				block.workspaceKey,
-				block.projectName
-			);
-			const taskId = await this.resolveTask(
-				organizationId,
-				projectId,
-				block.workspaceKey,
-				block.branch
-			);
-			const entry: EntryInput = {
-				segmentId: markerId,
-				start: block.start,
-				end: block.end,
-				projectId,
-				taskId,
-				description: block.branch ?? block.projectName,
-			};
-			const entryId = await connector.createEntry(organizationId, memberId, entry);
-			this.deps.onDelivered?.(entryId, block);
-			for (const id of block.segmentIds) {
-				store.markDelivered(id, 'solidtime');
-			}
-			log(`delivered ${block.projectName} ${block.branch ?? ''} ${block.start}..${block.end}`);
-		} catch (error) {
-			if (error instanceof ConnectorError && error.retryable) {
-				throw error; // abort run, retry whole thing next tick
-			}
-			log(`skipped ${markerId}: ${String(error)}`);
-		}
-	}
-
-	private async resolveProject(
-		organizationId: string,
-		workspaceKey: string,
-		projectName: string
-	): Promise<string> {
-		const { mappings, connector } = this.deps;
-		const cached = mappings.getProjectId(workspaceKey);
-		if (cached) {
-			return cached;
-		}
-		const found =
-			(await connector.findProjectByName(organizationId, projectName)) ??
-			(await connector.createProject(organizationId, projectName));
-		await mappings.setProjectId(workspaceKey, found);
-		return found;
-	}
-
-	private async resolveTask(
-		organizationId: string,
-		projectId: string,
-		workspaceKey: string,
-		branch: string | undefined
-	): Promise<string | null> {
-		const { mappings, connector } = this.deps;
-		if (!branch) {
-			// eslint-disable-next-line unicorn/no-null -- EntryInput contract uses null for "no task"
-			return null;
-		}
-		const cached = mappings.getTaskId(workspaceKey, branch);
-		if (cached) {
-			return cached;
-		}
-		const found =
-			(await connector.findTaskByName(organizationId, projectId, branch)) ??
-			(await connector.createTask(organizationId, projectId, branch));
-		await mappings.setTaskId(workspaceKey, branch, found);
-		return found;
+		return '';
 	}
 }

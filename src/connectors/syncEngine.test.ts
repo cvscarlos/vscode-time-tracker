@@ -1,206 +1,127 @@
 import * as assert from 'node:assert';
-import { DeliveryBlock } from './aggregate';
-import { EntryInput, TimeSyncConnector } from './connector';
-import { MappingStore } from './mappingStore';
 import { SyncEngine } from './syncEngine';
-import { FileOutboxStore } from '../tracker/storage/fileOutboxStore';
+import { DeliveryBlock, TimeDestination } from './destination';
+import { ConnectorError } from './connector';
 import { Store } from '../tracker/storage/store';
-import { LocalSegment } from '../tracker/types';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import path from 'node:path';
+import { LocalSegment, JournalRecord } from '../tracker/types';
 
-const clock = () => new Date('2026-07-21T12:00:00Z');
-// Fixed "now" used for settlement math: 30+ minutes after the default seeded
-// segment's end, well past SETTLE_MS, so existing tests see settled blocks.
-const NOW_MS = Date.parse('2026-07-21T10:00:00.000Z');
-const SETTLE_MS = 5 * 60_000;
-const MERGE_GAP_MS = 2 * 60_000;
-
-function tempStore(): FileOutboxStore {
-	return new FileOutboxStore(fs.mkdtempSync(path.join(os.tmpdir(), 'nt-sync-')), 'w', clock);
-}
-function memMemento() {
-	const m = new Map<string, unknown>();
-	return {
-		get: <T>(k: string) => m.get(k) as T | undefined,
-		update: async (k: string, v: unknown) => void m.set(k, v),
-	};
-}
-function seg(id: string, overrides: Partial<LocalSegment> = {}): LocalSegment {
+function seg(id: string, startMs: number, endMs: number): LocalSegment {
 	return {
 		id,
-		instanceId: 'w',
-		start: '2026-07-21T09:00:00.000Z',
-		end: '2026-07-21T09:30:00.000Z',
-		activeMilliseconds: 1_800_000,
+		instanceId: 'inst',
+		start: new Date(startMs).toISOString(),
+		end: new Date(endMs).toISOString(),
+		activeMilliseconds: endMs - startMs,
 		workspaceKey: 'ws',
 		projectName: 'proj',
 		branch: 'main',
 		syncState: 'pending',
-		...overrides,
 	};
 }
 
-class FakeConnector implements TimeSyncConnector {
-	created: EntryInput[] = [];
-	projects = new Map<string, string>();
-	constructor(private present = new Set<string>()) {}
-	async resolveMember() {
-		return { organizationId: 'org', memberId: 'mem' };
+class MemStore implements Store {
+	private delivered = new Set<string>(); // `${segId}:${destId}`
+	constructor(private segments: LocalSegment[]) {}
+	append(_r: JournalRecord): void {}
+	recover(): LocalSegment[] {
+		return this.segments;
 	}
-	async findProjectByName() {
-		// eslint-disable-next-line unicorn/no-null -- TimeSyncConnector contract uses null for "not found"
-		return null;
+	listUndelivered(enabledIds: string[]): LocalSegment[] {
+		return this.segments.filter(
+			(s) => !(enabledIds.length > 0 && enabledIds.every((id) => this.isDelivered(s.id, id)))
+		);
 	}
-	async createProject(_o: string, name: string) {
-		const id = 'p-' + name;
-		this.projects.set(name, id);
-		return id;
+	claim(): boolean {
+		return true;
 	}
-	async findTaskByName() {
-		// eslint-disable-next-line unicorn/no-null -- TimeSyncConnector contract uses null for "not found"
-		return null;
+	isDelivered(segId: string, destId: string): boolean {
+		return this.delivered.has(`${segId}:${destId}`);
 	}
-	async createTask(_o: string, _p: string, name: string) {
-		return 't-' + name;
+	markDelivered(segId: string, destId: string): void {
+		this.delivered.add(`${segId}:${destId}`);
 	}
-	async listEntryMarkers() {
-		return this.present;
+	compact(enabledIds: string[]): void {
+		this.segments = this.listUndelivered(enabledIds);
 	}
-	async createEntry(_o: string, _m: string, e: EntryInput) {
-		this.created.push(e);
-		return 'entry-' + e.segmentId;
-	}
-	async updateEntryDescription() {}
 }
 
-// Shared construction for the common case: a real FileOutboxStore-backed
-// SyncEngine wired to a FakeConnector, differing only in a few knobs
-// (delivered/onDelivered) that individual tests need. Tests that require a
-// hand-rolled Store (to observe claim/isDelivered timing) build the engine
-// directly with `new SyncEngine(...)` instead of this helper.
-function makeEngine(
-	overrides: {
-		present?: Set<string>;
-		mappings?: MappingStore;
-		onDelivered?: (entryId: string, block: DeliveryBlock) => void;
-	} = {}
-) {
-	const store = tempStore();
-	const connector = new FakeConnector(overrides.present);
-	const mappings = overrides.mappings ?? new MappingStore(memMemento());
-	const engine = new SyncEngine({
-		store,
-		connector,
-		mappings,
-		now: () => NOW_MS,
-		settleMs: SETTLE_MS,
-		mergeGapMs: MERGE_GAP_MS,
-		log: () => {},
-		onStatus: () => {},
-		onDelivered: overrides.onDelivered,
-	});
-	return { engine, store, connector, mappings };
+class FakeDest implements TimeDestination {
+	prepared = false;
+	delivered: string[] = [];
+	constructor(
+		readonly id: string,
+		readonly label: string,
+		private readonly behavior: { prepareThrows?: Error; deliverThrows?: Error } = {}
+	) {}
+	async prepare(): Promise<void> {
+		if (this.behavior.prepareThrows) {
+			throw this.behavior.prepareThrows;
+		}
+		this.prepared = true;
+	}
+	async deliver(block: DeliveryBlock): Promise<string> {
+		if (this.behavior.deliverThrows) {
+			throw this.behavior.deliverThrows;
+		}
+		this.delivered.push(block.segmentIds[0]);
+		return `${this.id}-ref`;
+	}
+	async retitle(): Promise<void> {}
 }
 
-suite('SyncEngine', () => {
-	test('delivers an undelivered segment, provisions project, marks delivered', async () => {
-		const { engine, store, connector } = makeEngine();
-		store.append({ type: 'close', segment: seg('a') });
-		await engine.runOnce();
-		assert.equal(connector.created.length, 1);
-		assert.equal(connector.created[0].segmentId, 'a');
-		assert.equal(store.listUndelivered(['solidtime']).length, 0);
+// Old enough that aggregation settles it (now - end >= settleMs) and it rounds to >= 1 minute.
+const OLD = seg('seg-1', 0, 60_000);
+const NOW = 10 * 60_000;
+const opts = {
+	now: () => NOW,
+	settleMs: 60_000,
+	mergeGapMs: 120_000,
+	log: () => {},
+	onStatus: () => {},
+};
+
+suite('SyncEngine dispatcher', () => {
+	test('delivers a ready block to every enabled destination', async () => {
+		const store = new MemStore([OLD]);
+		const a = new FakeDest('solidtime', 'solidtime');
+		const b = new FakeDest('timetagger', 'TimeTagger');
+		await new SyncEngine({ store, destinations: [a, b], ...opts }).runOnce();
+		assert.deepEqual(a.delivered, ['seg-1']);
+		assert.deepEqual(b.delivered, ['seg-1']);
+		assert.equal(store.listUndelivered(['solidtime', 'timetagger']).length, 0);
 	});
 
-	test('does NOT re-create an entry whose marker is already present on the server', async () => {
-		const { engine, store, connector } = makeEngine({ present: new Set(['b']) });
-		store.append({ type: 'close', segment: seg('b') });
-		await engine.runOnce();
-		assert.equal(connector.created.length, 0);
-		assert.equal(store.listUndelivered(['solidtime']).length, 0); // marked delivered via reconciliation
+	test('a destination already holding the block is skipped', async () => {
+		const store = new MemStore([OLD]);
+		store.markDelivered('seg-1', 'solidtime');
+		const a = new FakeDest('solidtime', 'solidtime');
+		const b = new FakeDest('timetagger', 'TimeTagger');
+		await new SyncEngine({ store, destinations: [a, b], ...opts }).runOnce();
+		assert.deepEqual(a.delivered, []); // already delivered — not re-sent
+		assert.deepEqual(b.delivered, ['seg-1']);
 	});
 
-	test('does NOT create an entry when the segment was delivered after the claim', async () => {
-		// A concurrent window delivered this segment between our listUndelivered()
-		// snapshot and our claim. isDelivered() must gate the send to avoid a
-		// duplicate, even though listUndelivered() still reported it.
-		const delivered = new Set<string>();
-		const claimed = new Set<string>();
-		const store: Store = {
-			append: () => {},
-			recover: () => [],
-			listUndelivered: () => [seg('d')],
-			claim: (id: string) => {
-				claimed.add(id);
-				return true;
-			},
-			isDelivered: (id: string) => id === 'd', // already delivered elsewhere
-			markDelivered: (id: string) => void delivered.add(id),
-			compact: () => {},
-		};
-		const connector = new FakeConnector();
-		const engine = new SyncEngine({
-			store,
-			connector,
-			mappings: new MappingStore(memMemento()),
-			now: () => NOW_MS,
-			settleMs: SETTLE_MS,
-			mergeGapMs: MERGE_GAP_MS,
-			log: () => {},
-			onStatus: () => {},
+	test('one backend failing does not block the other, and the block is retained', async () => {
+		const store = new MemStore([OLD]);
+		const down = new FakeDest('solidtime', 'solidtime', {
+			deliverThrows: new ConnectorError('503', 503, true),
 		});
-		await engine.runOnce();
-		assert.equal(connector.created.length, 0);
-		assert.ok(claimed.has('d'));
+		const up = new FakeDest('timetagger', 'TimeTagger');
+		await new SyncEngine({ store, destinations: [down, up], ...opts }).runOnce();
+		assert.deepEqual(up.delivered, ['seg-1']); // healthy backend still got it
+		assert.equal(store.isDelivered('seg-1', 'timetagger'), true);
+		assert.equal(store.isDelivered('seg-1', 'solidtime'), false);
+		assert.equal(store.listUndelivered(['solidtime', 'timetagger']).length, 1); // retained for retry
 	});
 
-	test('caches a provisioned project id in the mapping store', async () => {
-		const mappings = new MappingStore(memMemento());
-		const { engine, store } = makeEngine({ mappings });
-		store.append({ type: 'close', segment: seg('c') });
-		await engine.runOnce();
-		assert.equal(mappings.getProjectId('ws'), 'p-proj');
-	});
-
-	test('merges two contiguous settled segments into one block and delivers a single entry', async () => {
-		const { engine, store, connector } = makeEngine();
-		store.append({
-			type: 'close',
-			segment: seg('m1', { start: '2026-07-21T09:00:00.000Z', end: '2026-07-21T09:10:00.000Z' }),
+	test('a prepare failure isolates that destination while the other proceeds', async () => {
+		const store = new MemStore([OLD]);
+		const broken = new FakeDest('solidtime', 'solidtime', {
+			prepareThrows: new ConnectorError('401', 401, false),
 		});
-		store.append({
-			type: 'close',
-			segment: seg('m2', { start: '2026-07-21T09:11:00.000Z', end: '2026-07-21T09:20:00.000Z' }),
-		});
-		await engine.runOnce();
-		assert.equal(connector.created.length, 1);
-		assert.equal(connector.created[0].segmentId, 'm1');
-		assert.equal(connector.created[0].start, '2026-07-21T09:00:00.000Z');
-		assert.equal(connector.created[0].end, '2026-07-21T09:20:00.000Z');
-		assert.equal(store.listUndelivered(['solidtime']).length, 0);
-	});
-
-	test('calls onDelivered with the connector-assigned entry id and the delivered block', async () => {
-		const delivered: { entryId: string; block: DeliveryBlock }[] = [];
-		const { engine, store } = makeEngine({
-			onDelivered: (entryId, block) => delivered.push({ entryId, block }),
-		});
-		store.append({ type: 'close', segment: seg('e') });
-		await engine.runOnce();
-		assert.equal(delivered.length, 1);
-		assert.equal(delivered[0].entryId, 'entry-e');
-		assert.equal(delivered[0].block.segmentIds[0], 'e');
-	});
-
-	test('holds an unsettled segment: no entry created, segment stays undelivered', async () => {
-		const { engine, store, connector } = makeEngine();
-		// Ends only 1 minute before "now" — well inside SETTLE_MS (5 minutes) —
-		// so the block is not yet ready and must be held.
-		store.append({ type: 'close', segment: seg('u1', { end: '2026-07-21T09:59:00.000Z' }) });
-		await engine.runOnce();
-		assert.equal(connector.created.length, 0);
-		assert.equal(store.listUndelivered(['solidtime']).length, 1);
+		const up = new FakeDest('timetagger', 'TimeTagger');
+		await new SyncEngine({ store, destinations: [broken, up], ...opts }).runOnce();
+		assert.deepEqual(up.delivered, ['seg-1']);
+		assert.equal(store.isDelivered('seg-1', 'solidtime'), false);
 	});
 });
