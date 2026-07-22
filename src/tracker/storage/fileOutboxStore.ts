@@ -108,9 +108,10 @@ export class FileOutboxStore implements Store {
 		});
 	}
 
-	public listUndelivered(): LocalSegment[] {
+	public listUndelivered(enabledIds: string[]): LocalSegment[] {
 		return this.recover().filter(
-			(segment) => !this.isDelivered(segment.id) && !this.isClaimedByOther(segment.id)
+			(segment) =>
+				!this.isFullyDelivered(segment.id, enabledIds) && !this.isClaimedByOther(segment.id)
 		);
 	}
 
@@ -130,13 +131,18 @@ export class FileOutboxStore implements Store {
 		}
 	}
 
-	public markDelivered(segmentId: string): void {
-		fs.writeFileSync(path.join(this.deliveredDir, segmentId), '');
+	public markDelivered(segmentId: string, destinationId: string): void {
+		fs.writeFileSync(path.join(this.deliveredDir, `${segmentId}.${destinationId}`), '');
 		this.tryRemove(path.join(this.claimsDir, `${segmentId}.claim`));
 	}
 
-	public compact(): void {
-		const deliveredIds = new Set(fs.readdirSync(this.deliveredDir));
+	private isFullyDelivered(segmentId: string, enabledIds: string[]): boolean {
+		return enabledIds.length > 0 && enabledIds.every((id) => this.isDelivered(segmentId, id));
+	}
+
+	public compact(enabledIds: string[]): void {
+		const fullyDelivered = (segmentId: string): boolean =>
+			this.isFullyDelivered(segmentId, enabledIds);
 		// Only rewrite files owned by this instance. Rewriting another live
 		// window's file could clobber a record it appended between our read and
 		// write.
@@ -151,7 +157,7 @@ export class FileOutboxStore implements Store {
 						return false;
 					}
 					const segmentId = segmentIdOf(line);
-					return segmentId !== undefined && !deliveredIds.has(segmentId);
+					return segmentId !== undefined && !fullyDelivered(segmentId);
 				});
 			if (kept.length === 0) {
 				this.tryRemove(full);
@@ -172,12 +178,15 @@ export class FileOutboxStore implements Store {
 		// it). listUndelivered() excludes tombstoned ids, so the segment stays
 		// suppressed meanwhile.
 		const presentIds = this.presentSegmentIds();
-		for (const id of deliveredIds) {
-			if (presentIds.has(id)) {
+		for (const tombstone of fs.readdirSync(this.deliveredDir)) {
+			const segmentId = tombstone.includes('.')
+				? tombstone.slice(0, tombstone.indexOf('.'))
+				: tombstone;
+			if (presentIds.has(segmentId)) {
 				continue;
 			}
-			this.tryRemove(path.join(this.deliveredDir, id));
-			this.tryRemove(path.join(this.claimsDir, `${id}.claim`));
+			this.tryRemove(path.join(this.deliveredDir, tombstone));
+			this.tryRemove(path.join(this.claimsDir, `${segmentId}.claim`));
 		}
 	}
 
@@ -189,8 +198,13 @@ export class FileOutboxStore implements Store {
 		return ids;
 	}
 
-	public isDelivered(segmentId: string): boolean {
-		return fs.existsSync(path.join(this.deliveredDir, segmentId));
+	public isDelivered(segmentId: string, destinationId: string): boolean {
+		if (fs.existsSync(path.join(this.deliveredDir, `${segmentId}.${destinationId}`))) {
+			return true;
+		}
+		// Migration: a bare tombstone (no destination suffix) predates multi-backend
+		// support and represents a solidtime delivery.
+		return destinationId === 'solidtime' && fs.existsSync(path.join(this.deliveredDir, segmentId));
 	}
 
 	private isClaimedByOther(segmentId: string): boolean {

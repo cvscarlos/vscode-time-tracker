@@ -43,7 +43,7 @@ export function activate(context: vscode.ExtensionContext): void {
 	// Count the outbox ONCE at activation, then track it in memory. Re-reading
 	// every outbox file on every close is O(history) on the extension host.
 	// Outbox growth between activations is bounded by pass-2 delivery/compaction.
-	let pendingCount = store.listUndelivered().length;
+	let pendingCount = store.listUndelivered(['solidtime']).length;
 	statusBar.setPending(pendingCount);
 
 	const mappings = new MappingStore(context.globalState);

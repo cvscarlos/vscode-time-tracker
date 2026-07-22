@@ -20,7 +20,7 @@ export class SyncEngine {
 
 	async runOnce(): Promise<void> {
 		const { store, connector, log, onStatus } = this.deps;
-		const undelivered = store.listUndelivered();
+		const undelivered = store.listUndelivered(['solidtime']);
 		const blocks = aggregate(undelivered, {
 			nowMs: this.deps.now(),
 			settleMs: this.deps.settleMs,
@@ -44,15 +44,15 @@ export class SyncEngine {
 			for (const block of blocks) {
 				await this.deliverBlock(block, organizationId, memberId, present);
 			}
-			store.compact();
-			onStatus(store.listUndelivered().length, false);
+			store.compact(['solidtime']);
+			onStatus(store.listUndelivered(['solidtime']).length, false);
 		} catch (error) {
 			const authHint =
 				error instanceof ConnectorError && error.status === 401
 					? ' (check your API token: "Time Tracker nt: Set solidtime API Token")'
 					: '';
 			log(`sync failed: ${String(error)}${authHint}`);
-			onStatus(store.listUndelivered().length, true);
+			onStatus(store.listUndelivered(['solidtime']).length, true);
 		}
 	}
 
@@ -71,9 +71,9 @@ export class SyncEngine {
 		// block a claim, so another window may have delivered this block
 		// between our listUndelivered() snapshot and this claim. Sending
 		// again would create a duplicate.
-		if (store.isDelivered(markerId) || present.has(markerId)) {
+		if (store.isDelivered(markerId, 'solidtime') || present.has(markerId)) {
 			for (const id of block.segmentIds) {
-				store.markDelivered(id);
+				store.markDelivered(id, 'solidtime');
 			}
 			return;
 		}
@@ -100,7 +100,7 @@ export class SyncEngine {
 			const entryId = await connector.createEntry(organizationId, memberId, entry);
 			this.deps.onDelivered?.(entryId, block);
 			for (const id of block.segmentIds) {
-				store.markDelivered(id);
+				store.markDelivered(id, 'solidtime');
 			}
 			log(`delivered ${block.projectName} ${block.branch ?? ''} ${block.start}..${block.end}`);
 		} catch (error) {

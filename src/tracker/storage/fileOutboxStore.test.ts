@@ -3,12 +3,29 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import path from 'node:path';
 import { FileOutboxStore } from './fileOutboxStore';
-import { LocalSegment, OpenRecord } from '../types';
+import { JournalRecord, LocalSegment, OpenRecord } from '../types';
 
 const clock = () => new Date('2026-07-21T10:00:00Z');
 
 function tempDir(): string {
 	return fs.mkdtempSync(path.join(os.tmpdir(), 'nt-outbox-'));
+}
+
+function closeRecord(id: string): JournalRecord {
+	return {
+		type: 'close',
+		segment: {
+			id,
+			instanceId: 'inst',
+			start: new Date(0).toISOString(),
+			end: new Date(60_000).toISOString(),
+			activeMilliseconds: 60_000,
+			workspaceKey: 'ws',
+			projectName: 'proj',
+			branch: 'main',
+			syncState: 'pending',
+		},
+	};
 }
 
 function seg(id: string, ms: number): LocalSegment {
@@ -128,14 +145,14 @@ suite('FileOutboxStore', () => {
 		// B's file during compact, so the tombstone must be retained to keep the
 		// segment suppressed — otherwise recover() re-surfaces it forever.
 		const winA = new FileOutboxStore(dir, 'winA', clock);
-		winA.markDelivered('shared');
-		winA.compact();
-		assert.ok(!winA.listUndelivered().some((s) => s.id === 'shared'));
-		assert.ok(fs.existsSync(path.join(dir, 'delivered', 'shared')));
+		winA.markDelivered('shared', 'solidtime');
+		winA.compact(['solidtime']);
+		assert.ok(!winA.listUndelivered(['solidtime']).some((s) => s.id === 'shared'));
+		assert.ok(fs.existsSync(path.join(dir, 'delivered', 'shared.solidtime')));
 		// Repeated cycles must not re-surface it either.
-		winA.compact();
-		assert.ok(!winA.listUndelivered().some((s) => s.id === 'shared'));
-		assert.ok(fs.existsSync(path.join(dir, 'delivered', 'shared')));
+		winA.compact(['solidtime']);
+		assert.ok(!winA.listUndelivered(['solidtime']).some((s) => s.id === 'shared'));
+		assert.ok(fs.existsSync(path.join(dir, 'delivered', 'shared.solidtime')));
 	});
 
 	test('claim grants a segment to exactly one caller', () => {
@@ -149,17 +166,17 @@ suite('FileOutboxStore', () => {
 	test('markDelivered removes a segment from listUndelivered', () => {
 		const store = new FileOutboxStore(tempDir(), 'inst', clock);
 		store.append({ type: 'close', segment: seg('a', 1000) });
-		assert.equal(store.listUndelivered().length, 1);
-		store.markDelivered('a');
-		assert.equal(store.listUndelivered().length, 0);
+		assert.equal(store.listUndelivered(['solidtime']).length, 1);
+		store.markDelivered('a', 'solidtime');
+		assert.equal(store.listUndelivered(['solidtime']).length, 0);
 	});
 
 	test('compact drops delivered segments from the journal', () => {
 		const store = new FileOutboxStore(tempDir(), 'inst', clock);
 		store.append({ type: 'close', segment: seg('a', 1000) });
 		store.append({ type: 'close', segment: seg('b', 2000) });
-		store.markDelivered('a');
-		store.compact();
+		store.markDelivered('a', 'solidtime');
+		store.compact(['solidtime']);
 		const ids = store.recover().map((s) => s.id);
 		assert.deepEqual(ids, ['b']);
 	});
@@ -170,8 +187,8 @@ suite('FileOutboxStore', () => {
 		const win2 = new FileOutboxStore(dir, 'win2', clock);
 		win1.append({ type: 'close', segment: seg('a', 1000) });
 		win2.append({ type: 'close', segment: seg('b', 2000) });
-		win1.markDelivered('a');
-		win1.compact();
+		win1.markDelivered('a', 'solidtime');
+		win1.compact(['solidtime']);
 		// win1's delivered segment is gone; win2's file was never rewritten and
 		// its segment is still recoverable.
 		const ids = new FileOutboxStore(dir, 'fresh', clock).recover().map((s) => s.id);
@@ -185,8 +202,50 @@ suite('FileOutboxStore', () => {
 		store.append({ type: 'close', segment: seg('a', 1000) });
 		const journalFile = path.join(dir, 'inst-2026-07-21.jsonl');
 		fs.appendFileSync(journalFile, '{ not valid json');
-		assert.doesNotThrow(() => store.compact());
+		assert.doesNotThrow(() => store.compact(['solidtime']));
 		const ids = store.recover().map((s) => s.id);
 		assert.deepEqual(ids, ['a']);
+	});
+
+	test('a segment is undelivered until delivered to every enabled destination', () => {
+		const dir = tempDir();
+		const store = new FileOutboxStore(dir, 'inst', () => new Date(1000));
+		store.append(closeRecord('seg-1'));
+
+		assert.equal(store.listUndelivered(['solidtime', 'timetagger']).length, 1);
+
+		store.markDelivered('seg-1', 'solidtime');
+		assert.equal(store.isDelivered('seg-1', 'solidtime'), true);
+		assert.equal(store.isDelivered('seg-1', 'timetagger'), false);
+		// still pending: timetagger has not received it
+		assert.equal(store.listUndelivered(['solidtime', 'timetagger']).length, 1);
+
+		store.markDelivered('seg-1', 'timetagger');
+		assert.equal(store.listUndelivered(['solidtime', 'timetagger']).length, 0);
+	});
+
+	test('compact purges a segment only once delivered to all enabled destinations', () => {
+		const dir = tempDir();
+		const store = new FileOutboxStore(dir, 'inst', () => new Date(1000));
+		store.append(closeRecord('seg-1'));
+
+		store.markDelivered('seg-1', 'timetagger');
+		store.compact(['solidtime', 'timetagger']);
+		assert.equal(store.recover().length, 1); // not fully delivered — retained
+
+		store.markDelivered('seg-1', 'solidtime');
+		store.compact(['solidtime', 'timetagger']);
+		assert.equal(store.recover().length, 0); // now purged
+	});
+
+	test('a bare (pre-TimeTagger) tombstone is read as a solidtime delivery', () => {
+		const dir = tempDir();
+		const store = new FileOutboxStore(dir, 'inst', () => new Date(1000));
+		store.append(closeRecord('seg-1'));
+		// simulate an old tombstone written before per-destination support
+		fs.writeFileSync(path.join(dir, 'delivered', 'seg-1'), '');
+
+		assert.equal(store.isDelivered('seg-1', 'solidtime'), true);
+		assert.equal(store.listUndelivered(['solidtime']).length, 0);
 	});
 });

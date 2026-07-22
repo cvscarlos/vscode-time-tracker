@@ -111,7 +111,7 @@ suite('SyncEngine', () => {
 		await engine.runOnce();
 		assert.equal(connector.created.length, 1);
 		assert.equal(connector.created[0].segmentId, 'a');
-		assert.equal(store.listUndelivered().length, 0);
+		assert.equal(store.listUndelivered(['solidtime']).length, 0);
 	});
 
 	test('does NOT re-create an entry whose marker is already present on the server', async () => {
@@ -119,7 +119,7 @@ suite('SyncEngine', () => {
 		store.append({ type: 'close', segment: seg('b') });
 		await engine.runOnce();
 		assert.equal(connector.created.length, 0);
-		assert.equal(store.listUndelivered().length, 0); // marked delivered via reconciliation
+		assert.equal(store.listUndelivered(['solidtime']).length, 0); // marked delivered via reconciliation
 	});
 
 	test('does NOT create an entry when the segment was delivered after the claim', async () => {
@@ -179,7 +179,7 @@ suite('SyncEngine', () => {
 		assert.equal(connector.created[0].segmentId, 'm1');
 		assert.equal(connector.created[0].start, '2026-07-21T09:00:00.000Z');
 		assert.equal(connector.created[0].end, '2026-07-21T09:20:00.000Z');
-		assert.equal(store.listUndelivered().length, 0);
+		assert.equal(store.listUndelivered(['solidtime']).length, 0);
 	});
 
 	test('calls onDelivered with the connector-assigned entry id and the delivered block', async () => {
@@ -201,6 +201,6 @@ suite('SyncEngine', () => {
 		store.append({ type: 'close', segment: seg('u1', { end: '2026-07-21T09:59:00.000Z' }) });
 		await engine.runOnce();
 		assert.equal(connector.created.length, 0);
-		assert.equal(store.listUndelivered().length, 1);
+		assert.equal(store.listUndelivered(['solidtime']).length, 1);
 	});
 });
