@@ -34,7 +34,7 @@ export class SolidtimeConnector implements SolidtimeConnectorLike {
 			? memberships.find((m) => m.organization.id === this.organizationId)
 			: memberships[0];
 		if (!chosen) {
-			throw new ConnectorError('No matching solidtime organization/membership', undefined, false);
+			throw new ConnectorError('No matching SolidTime organization/membership', undefined, false);
 		}
 		return { organizationId: chosen.organization.id, memberId: chosen.id };
 	}
@@ -151,7 +151,7 @@ export class SolidtimeConnector implements SolidtimeConnectorLike {
 			// (e.g. "The client id field must be present."), which the status alone hides.
 			const detail = await response.text().catch(() => '');
 			throw new ConnectorError(
-				`solidtime ${method} ${path} -> HTTP ${response.status} ${detail.slice(0, 300)}`.trim(),
+				`SolidTime ${method} ${path} -> HTTP ${response.status} ${detail.slice(0, 300)}`.trim(),
 				response.status,
 				retryable
 			);

@@ -110,7 +110,7 @@ export class SyncEngine {
 			const command =
 				dest.id === 'timetagger'
 					? 'Time Tracker nt: Set TimeTagger Token'
-					: 'Time Tracker nt: Set solidtime Token';
+					: 'Time Tracker nt: Set SolidTime Token';
 			return ` (check your API token: "${command}")`;
 		}
 		return '';

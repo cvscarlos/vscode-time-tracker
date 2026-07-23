@@ -14,7 +14,7 @@ export interface TitleCtx {
 export interface TimeDestination {
 	/** Stable id used as the per-destination delivery key: 'solidtime' | 'timetagger'. */
 	readonly id: string;
-	/** Human label for logs, status, and token hints: 'solidtime' | 'TimeTagger'. */
+	/** Human label for logs, status, and token hints: 'SolidTime' | 'TimeTagger'. */
 	readonly label: string;
 	/** Pre-fetch anything the run needs (member id, dedup set). No-op for key-idempotent backends. */
 	prepare(sinceIso: string): Promise<void>;

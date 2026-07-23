@@ -40,11 +40,11 @@
 			},
 			{
 				"command": "ntTimeTracker.setSolidtimeToken",
-				"title": "Time Tracker nt: Set solidtime Token"
+				"title": "Time Tracker nt: Set SolidTime Token"
 			},
 			{
 				"command": "ntTimeTracker.deleteSolidtimeToken",
-				"title": "Time Tracker nt: Delete solidtime Token"
+				"title": "Time Tracker nt: Delete SolidTime Token"
 			},
 			{
 				"command": "ntTimeTracker.setTimetaggerToken",
@@ -83,12 +83,12 @@
 				"ntTimeTracker.solidtime.apiUrl": {
 					"type": "string",
 					"default": "https://app.solidtime.io",
-					"description": "solidtime base URL (cloud or self-hosted)."
+					"description": "SolidTime base URL (cloud or self-hosted)."
 				},
 				"ntTimeTracker.solidtime.organizationId": {
 					"type": "string",
 					"default": "",
-					"description": "solidtime organization id. Leave blank to use your first organization."
+					"description": "SolidTime organization id. Leave blank to use your first organization."
 				},
 				"ntTimeTracker.timetagger.apiUrl": {
 					"type": "string",

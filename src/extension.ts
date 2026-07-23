@@ -277,13 +277,13 @@ export function activate(context: vscode.ExtensionContext): void {
 			promptForToken(
 				context,
 				'solidtime',
-				'solidtime API Token',
-				'solidtime → Profile Settings → Create API Token'
+				'SolidTime API Token',
+				'SolidTime → Profile Settings → Create API Token'
 			)
 		),
 		vscode.commands.registerCommand('ntTimeTracker.deleteSolidtimeToken', async () => {
 			await clearToken(context, 'solidtime');
-			vscode.window.showInformationMessage('solidtime API token deleted.');
+			vscode.window.showInformationMessage('SolidTime API token deleted.');
 		}),
 		vscode.commands.registerCommand('ntTimeTracker.setTimetaggerToken', () =>
 			promptForToken(

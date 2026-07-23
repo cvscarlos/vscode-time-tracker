@@ -23,7 +23,7 @@ export interface SolidtimeConnectorLike {
 
 export class SolidtimeDestination implements TimeDestination {
 	readonly id = 'solidtime';
-	readonly label = 'solidtime';
+	readonly label = 'SolidTime';
 	private organizationId = '';
 	private memberId = '';
 	private present = new Set<string>();
