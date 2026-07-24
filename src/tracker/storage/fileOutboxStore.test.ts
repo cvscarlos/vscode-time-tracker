@@ -69,7 +69,7 @@ suite('FileOutboxStore', () => {
 			.recover()
 			.map((s) => s.id)
 			// eslint-disable-next-line unicorn/no-array-sort -- freshly derived array from map(), safe to mutate in place
-			.sort();
+			.sort((a, b) => a.localeCompare(b));
 		assert.deepEqual(ids, ['a', 'b']);
 	});
 
@@ -147,11 +147,11 @@ suite('FileOutboxStore', () => {
 		const winA = new FileOutboxStore(dir, 'winA', clock);
 		winA.markDelivered('shared', 'solidtime');
 		winA.compact(['solidtime']);
-		assert.ok(!winA.listUndelivered(['solidtime']).some((s) => s.id === 'shared'));
+		assert.ok(winA.listUndelivered(['solidtime']).every((s) => s.id !== 'shared'));
 		assert.ok(fs.existsSync(path.join(dir, 'delivered', 'shared.solidtime')));
 		// Repeated cycles must not re-surface it either.
 		winA.compact(['solidtime']);
-		assert.ok(!winA.listUndelivered(['solidtime']).some((s) => s.id === 'shared'));
+		assert.ok(winA.listUndelivered(['solidtime']).every((s) => s.id !== 'shared'));
 		assert.ok(fs.existsSync(path.join(dir, 'delivered', 'shared.solidtime')));
 	});
 

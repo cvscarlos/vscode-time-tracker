@@ -22,16 +22,48 @@ export interface SolidtimeConnectorLike {
 }
 
 export class SolidtimeDestination implements TimeDestination {
-	readonly id = 'solidtime';
-	readonly label = 'SolidTime';
 	private organizationId = '';
 	private memberId = '';
 	private present = new Set<string>();
+	readonly id = 'solidtime';
+	readonly label = 'SolidTime';
 
 	constructor(
 		private readonly connector: SolidtimeConnectorLike,
 		private readonly mappings: MappingStore
 	) {}
+
+	private async resolveProject(workspaceKey: string, projectName: string): Promise<string> {
+		const cached = this.mappings.getProjectId(workspaceKey);
+		if (cached) {
+			return cached;
+		}
+		const found =
+			(await this.connector.findProjectByName(this.organizationId, projectName)) ??
+			(await this.connector.createProject(this.organizationId, projectName));
+		await this.mappings.setProjectId(workspaceKey, found);
+		return found;
+	}
+
+	private async resolveTask(
+		projectId: string,
+		workspaceKey: string,
+		branch: string | undefined
+	): Promise<string | null> {
+		if (!branch) {
+			// eslint-disable-next-line unicorn/no-null -- EntryInput contract uses null for "no task"
+			return null;
+		}
+		const cached = this.mappings.getTaskId(workspaceKey, branch);
+		if (cached) {
+			return cached;
+		}
+		const found =
+			(await this.connector.findTaskByName(this.organizationId, projectId, branch)) ??
+			(await this.connector.createTask(this.organizationId, projectId, branch));
+		await this.mappings.setTaskId(workspaceKey, branch, found);
+		return found;
+	}
 
 	async prepare(sinceIso: string): Promise<void> {
 		const { organizationId, memberId } = await this.connector.resolveMember();
@@ -67,37 +99,5 @@ export class SolidtimeDestination implements TimeDestination {
 			ref,
 			`${title} ${markerFor(ctx.markerId)}`
 		);
-	}
-
-	private async resolveProject(workspaceKey: string, projectName: string): Promise<string> {
-		const cached = this.mappings.getProjectId(workspaceKey);
-		if (cached) {
-			return cached;
-		}
-		const found =
-			(await this.connector.findProjectByName(this.organizationId, projectName)) ??
-			(await this.connector.createProject(this.organizationId, projectName));
-		await this.mappings.setProjectId(workspaceKey, found);
-		return found;
-	}
-
-	private async resolveTask(
-		projectId: string,
-		workspaceKey: string,
-		branch: string | undefined
-	): Promise<string | null> {
-		if (!branch) {
-			// eslint-disable-next-line unicorn/no-null -- EntryInput contract uses null for "no task"
-			return null;
-		}
-		const cached = this.mappings.getTaskId(workspaceKey, branch);
-		if (cached) {
-			return cached;
-		}
-		const found =
-			(await this.connector.findTaskByName(this.organizationId, projectId, branch)) ??
-			(await this.connector.createTask(this.organizationId, projectId, branch));
-		await this.mappings.setTaskId(workspaceKey, branch, found);
-		return found;
 	}
 }

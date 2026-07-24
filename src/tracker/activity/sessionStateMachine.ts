@@ -31,7 +31,7 @@ interface OpenSegment {
 const iso = (ms: number) => new Date(ms).toISOString();
 
 export class SessionStateMachine {
-	private enabled = true;
+	private isEnabled = true;
 	private paused = false;
 	private focused = false;
 	private context: TrackingContext | undefined;
@@ -40,21 +40,69 @@ export class SessionStateMachine {
 
 	constructor(private readonly options: StateMachineOptions) {}
 
+	private canTrack(): boolean {
+		return this.isEnabled && !this.paused && this.focused && this.context !== undefined;
+	}
+
+	private openSegment(now: number): void {
+		const id = this.options.generateId();
+		this.open = {
+			id,
+			start: now,
+			lastActivity: now,
+			context: this.context!,
+			lastCheckpointAt: now,
+		};
+		this.options.sink.onOpen({
+			type: 'open',
+			id,
+			start: iso(now),
+			instanceId: this.options.instanceId,
+			context: this.context!,
+		});
+	}
+
+	private finalize(end: number): void {
+		const open = this.open;
+		if (!open) {
+			return;
+		}
+		this.open = undefined;
+		const boundedEnd = Math.max(end, open.start);
+		const activeMilliseconds = boundedEnd - open.start;
+		if (activeMilliseconds < this.options.minimumSegmentMs) {
+			return;
+		}
+		const segment: LocalSegment = {
+			id: open.id,
+			instanceId: this.options.instanceId,
+			start: iso(open.start),
+			end: iso(boundedEnd),
+			activeMilliseconds,
+			workspaceKey: open.context.workspaceKey,
+			projectName: open.context.projectName,
+			repositoryKey: open.context.repositoryKey,
+			branch: open.context.branch,
+			syncState: 'pending',
+		};
+		this.options.sink.onClose(segment);
+	}
+
 	setContext(context: TrackingContext | undefined): void {
-		if (sameContext(this.context, context)) {
+		if (isSameContext(this.context, context)) {
 			return;
 		}
 		this.finalize(this.open ? this.open.lastActivity : 0);
 		this.context = context;
 	}
 
-	onFocus(focused: boolean, now: number): void {
-		this.focused = focused;
-		this.blurAt = focused ? undefined : now;
+	onFocus(isFocused: boolean, now: number): void {
+		this.focused = isFocused;
+		this.blurAt = isFocused ? undefined : now;
 		// Focus alone starts tracking — no edit required — so reading or reviewing
 		// (e.g. an AI agent's terminal output) counts as work. The idle cap in
 		// tick() still stops a focused-but-inactive window after idleTimeoutMs.
-		if (focused && !this.open && this.canTrack()) {
+		if (isFocused && !this.open && this.canTrack()) {
 			this.openSegment(now);
 		}
 	}
@@ -105,11 +153,11 @@ export class SessionStateMachine {
 		this.paused = false;
 	}
 
-	setEnabled(enabled: boolean, now: number): void {
-		if (!enabled) {
+	setEnabled(isEnabled: boolean, now: number): void {
+		if (!isEnabled) {
 			this.finalize(this.open ? this.open.lastActivity : now);
 		}
-		this.enabled = enabled;
+		this.isEnabled = isEnabled;
 	}
 
 	shutdown(now: number): void {
@@ -120,7 +168,7 @@ export class SessionStateMachine {
 	currentStatus(
 		now: number
 	): 'tracking' | 'tracking-idle' | 'grace' | 'idle' | 'unfocused' | 'paused' | 'disabled' {
-		if (!this.enabled) {
+		if (!this.isEnabled) {
 			return 'disabled';
 		}
 		if (this.paused) {
@@ -157,57 +205,9 @@ export class SessionStateMachine {
 			this.finalize(this.open.lastActivity);
 		}
 	}
-
-	private canTrack(): boolean {
-		return this.enabled && !this.paused && this.focused && this.context !== undefined;
-	}
-
-	private openSegment(now: number): void {
-		const id = this.options.generateId();
-		this.open = {
-			id,
-			start: now,
-			lastActivity: now,
-			context: this.context!,
-			lastCheckpointAt: now,
-		};
-		this.options.sink.onOpen({
-			type: 'open',
-			id,
-			start: iso(now),
-			instanceId: this.options.instanceId,
-			context: this.context!,
-		});
-	}
-
-	private finalize(end: number): void {
-		const open = this.open;
-		if (!open) {
-			return;
-		}
-		this.open = undefined;
-		const boundedEnd = Math.max(end, open.start);
-		const activeMilliseconds = boundedEnd - open.start;
-		if (activeMilliseconds < this.options.minimumSegmentMs) {
-			return;
-		}
-		const segment: LocalSegment = {
-			id: open.id,
-			instanceId: this.options.instanceId,
-			start: iso(open.start),
-			end: iso(boundedEnd),
-			activeMilliseconds,
-			workspaceKey: open.context.workspaceKey,
-			projectName: open.context.projectName,
-			repositoryKey: open.context.repositoryKey,
-			branch: open.context.branch,
-			syncState: 'pending',
-		};
-		this.options.sink.onClose(segment);
-	}
 }
 
-function sameContext(a: TrackingContext | undefined, b: TrackingContext | undefined): boolean {
+function isSameContext(a: TrackingContext | undefined, b: TrackingContext | undefined): boolean {
 	if (a === b) {
 		return true;
 	}

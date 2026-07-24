@@ -176,7 +176,7 @@ suite('SolidtimeConnector', () => {
 		);
 		await assert.rejects(
 			c401.resolveMember(),
-			(e) => e instanceof ConnectorError && e.retryable === false
+			(e) => e instanceof ConnectorError && e.isRetryable === false
 		);
 		const c500 = new SolidtimeConnector(
 			base,
@@ -186,7 +186,7 @@ suite('SolidtimeConnector', () => {
 		);
 		await assert.rejects(
 			c500.resolveMember(),
-			(e) => e instanceof ConnectorError && e.retryable === true
+			(e) => e instanceof ConnectorError && e.isRetryable === true
 		);
 	});
 

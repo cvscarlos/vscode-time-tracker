@@ -148,10 +148,10 @@ export function activate(context: vscode.ExtensionContext): void {
 			settleMs: SETTLE_MS,
 			mergeGapMs: MERGE_GAP_MS,
 			log: (m) => output.appendLine(m),
-			onStatus: (pending, error) => {
+			onStatus: (pending, hasError) => {
 				pendingCount = pending;
 				statusBar.setPending(pending);
-				statusBar.setSyncError(error);
+				statusBar.setSyncError(hasError);
 			},
 			onDelivered: (destinationId, ref, block) => {
 				if (block.branch) {
@@ -186,7 +186,8 @@ export function activate(context: vscode.ExtensionContext): void {
 	// Offline catch-up: pick up commits made while VS Code wasn't running, then
 	// retitle anything they now cover. Fire-and-forget — activation must not wait.
 	void (async () => {
-		for (const c of await backfillCommits()) {
+		const backfilledCommits = await backfillCommits();
+		for (const c of backfilledCommits) {
 			await titleStore.addCommit(c);
 		}
 		await titleStore.prune(Date.now(), 48 * 60 * 60 * 1000);
@@ -205,6 +206,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		},
 	};
 
+	// eslint-disable-next-line unicorn/no-top-level-assignment-in-function -- module-level singleton set in activate(), read by deactivate()
 	machine = new SessionStateMachine({
 		instanceId,
 		idleTimeoutMs: config.get<number>('tracking.idleTimeoutSeconds', 300) * 1000,
@@ -225,8 +227,8 @@ export function activate(context: vscode.ExtensionContext): void {
 		}
 	};
 	context.subscriptions.push(
-		watchFocus((focused, now) => {
-			machine?.onFocus(focused, now);
+		watchFocus((isFocused, now) => {
+			machine?.onFocus(isFocused, now);
 			syncStatus();
 		}),
 		watchActivity((now) => {

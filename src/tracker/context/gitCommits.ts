@@ -37,7 +37,7 @@ interface GitApi {
  */
 export function watchCommits(onCommit: (commit: CommitInfo) => void): vscode.Disposable {
 	const disposables: vscode.Disposable[] = [];
-	let disposed = false;
+	let isDisposed = false;
 
 	const extension = vscode.extensions.getExtension<{ getAPI(version: 1): GitApi }>('vscode.git');
 	if (extension) {
@@ -45,7 +45,7 @@ export function watchCommits(onCommit: (commit: CommitInfo) => void): vscode.Dis
 			subscribeToRepositories(extension.exports.getAPI(1), disposables, onCommit);
 		} else {
 			void extension.activate().then((exports) => {
-				if (disposed) {
+				if (isDisposed) {
 					return;
 				}
 				subscribeToRepositories(exports.getAPI(1), disposables, onCommit);
@@ -55,7 +55,7 @@ export function watchCommits(onCommit: (commit: CommitInfo) => void): vscode.Dis
 
 	return vscode.Disposable.from({
 		dispose: () => {
-			disposed = true;
+			isDisposed = true;
 			for (const disposable of disposables) {
 				disposable.dispose();
 			}

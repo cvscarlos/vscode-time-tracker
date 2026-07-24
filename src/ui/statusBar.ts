@@ -26,6 +26,21 @@ export class StatusBar {
 		this.render();
 	}
 
+	private render(): void {
+		const parts = [ICONS[this.kind]];
+		if (this.pending > 0) {
+			parts.push(`$(cloud-upload) ${this.pending}`);
+		}
+		if (this.syncError) {
+			parts.push('$(warning)');
+		}
+		this.item.text = parts.join(' · ');
+		this.item.tooltip =
+			this.kind === 'tracking-idle'
+				? "You've gone idle — click to discard this idle time (your active work is kept)"
+				: 'Time Tracker nt — click for the log';
+	}
+
 	setState(kind: StateKind): void {
 		this.kind = kind;
 		// While idle-but-still-counting, a click discards the idle time; otherwise
@@ -40,27 +55,12 @@ export class StatusBar {
 		this.render();
 	}
 
-	setSyncError(failing: boolean): void {
-		this.syncError = failing;
+	setSyncError(isFailing: boolean): void {
+		this.syncError = isFailing;
 		this.render();
 	}
 
 	dispose(): void {
 		this.item.dispose();
-	}
-
-	private render(): void {
-		const parts = [ICONS[this.kind]];
-		if (this.pending > 0) {
-			parts.push(`$(cloud-upload) ${this.pending}`);
-		}
-		if (this.syncError) {
-			parts.push('$(warning)');
-		}
-		this.item.text = parts.join(' · ');
-		this.item.tooltip =
-			this.kind === 'tracking-idle'
-				? "You've gone idle — click to discard this idle time (your active work is kept)"
-				: 'Time Tracker nt — click for the log';
 	}
 }

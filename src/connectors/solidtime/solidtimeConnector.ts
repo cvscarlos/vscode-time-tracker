@@ -69,6 +69,49 @@ export class SolidtimeConnector implements SolidtimeConnectorLike {
 		this.fetchFn = fetchFn ?? fetch;
 	}
 
+	private async get<T>(path: string): Promise<T> {
+		return this.request<T>('GET', path);
+	}
+
+	private async post<T>(path: string, body: unknown): Promise<T> {
+		return this.request<T>('POST', path, body);
+	}
+
+	private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+		let response: Response;
+		try {
+			response = await this.fetchFn(`${this.apiUrl}${path}`, {
+				method,
+				headers: {
+					Authorization: `Bearer ${this.token}`,
+					Accept: 'application/json',
+					...(body !== undefined && { 'Content-Type': 'application/json' }),
+				},
+				body: body === undefined ? undefined : JSON.stringify(body),
+			});
+		} catch (error) {
+			throw new ConnectorError(`network error: ${String(error)}`, undefined, true);
+		}
+		if (!response.ok) {
+			const isRetryable = response.status >= 500 || response.status === 429;
+			// Include the response body — solidtime puts the validation reason there
+			// (e.g. "The client id field must be present."), which the status alone hides.
+			let detail = '';
+			try {
+				detail = await response.text();
+			} catch {
+				// body unreadable — fall back to the status alone
+			}
+			throw new ConnectorError(
+				`SolidTime ${method} ${path} -> HTTP ${response.status} ${detail.slice(0, 300)}`.trim(),
+				response.status,
+				isRetryable
+			);
+		}
+		const text = await response.text();
+		return (text ? JSON.parse(text) : {}) as T;
+	}
+
 	async resolveMember(): Promise<{ organizationId: string; memberId: string }> {
 		const data = await this.get<{ data: Membership[] }>('/api/v1/users/me/memberships');
 		const memberships = data.data ?? [];
@@ -128,8 +171,10 @@ export class SolidtimeConnector implements SolidtimeConnectorLike {
 		);
 		const markers = new Set<string>();
 		const re = /\[vsc:([^\]]+)\]/g;
-		for (const entry of data.data ?? []) {
-			for (const match of (entry.description ?? '').matchAll(re)) {
+		const entries = data.data ?? [];
+		for (const entry of entries) {
+			const description = entry.description ?? '';
+			for (const match of description.matchAll(re)) {
 				markers.add(match[1]);
 			}
 		}
@@ -196,43 +241,5 @@ export class SolidtimeConnector implements SolidtimeConnectorLike {
 			is_billable: project.isBillable,
 			client_id: project.clientId,
 		});
-	}
-
-	private async get<T>(path: string): Promise<T> {
-		return this.request<T>('GET', path);
-	}
-
-	private async post<T>(path: string, body: unknown): Promise<T> {
-		return this.request<T>('POST', path, body);
-	}
-
-	private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-		let response: Response;
-		try {
-			response = await this.fetchFn(`${this.apiUrl}${path}`, {
-				method,
-				headers: {
-					Authorization: `Bearer ${this.token}`,
-					Accept: 'application/json',
-					...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-				},
-				body: body === undefined ? undefined : JSON.stringify(body),
-			});
-		} catch (error) {
-			throw new ConnectorError(`network error: ${String(error)}`, undefined, true);
-		}
-		if (!response.ok) {
-			const retryable = response.status >= 500 || response.status === 429;
-			// Include the response body — solidtime puts the validation reason there
-			// (e.g. "The client id field must be present."), which the status alone hides.
-			const detail = await response.text().catch(() => '');
-			throw new ConnectorError(
-				`SolidTime ${method} ${path} -> HTTP ${response.status} ${detail.slice(0, 300)}`.trim(),
-				response.status,
-				retryable
-			);
-		}
-		const text = await response.text();
-		return (text ? JSON.parse(text) : {}) as T;
 	}
 }

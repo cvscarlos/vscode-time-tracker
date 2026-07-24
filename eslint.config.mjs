@@ -26,6 +26,9 @@ export default [
 			'no-throw-literal': 'warn',
 			semi: 'warn',
 			'unicorn/prevent-abbreviations': 'off',
+			// Opinionated abbreviation dictionary (v72): would rename the domain field
+			// repositoryKey->repoKey and dir/tmp/ref across the codebase for style only.
+			'unicorn/name-replacements': 'off',
 			'unicorn/filename-case': ['warn', { case: 'camelCase' }],
 		},
 	},

@@ -59,7 +59,7 @@ suite('outbox integration', () => {
 			.recover()
 			.map((s) => s.id)
 			// eslint-disable-next-line unicorn/no-array-sort -- freshly derived array from map(), safe to mutate in place
-			.sort();
+			.sort((a, b) => a.localeCompare(b));
 		assert.deepEqual(ids, ['a', 'b']);
 	});
 });

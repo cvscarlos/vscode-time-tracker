@@ -10,12 +10,77 @@ export interface SyncEngineDeps {
 	settleMs: number;
 	mergeGapMs: number;
 	log: (message: string) => void;
-	onStatus: (pending: number, error: boolean) => void;
+	onStatus: (pending: number, hasError: boolean) => void;
 	onDelivered?: (destinationId: string, ref: string, block: DeliveryBlock) => void;
 }
 
 export class SyncEngine {
 	constructor(private readonly deps: SyncEngineDeps) {}
+
+	private async prepareDestinations(
+		since: string
+	): Promise<{ active: TimeDestination[]; anyError: boolean }> {
+		const { destinations, log } = this.deps;
+		let isAnyError = false;
+		const active: TimeDestination[] = [];
+		for (const dest of destinations) {
+			try {
+				await dest.prepare(since);
+				active.push(dest);
+			} catch (error) {
+				isAnyError = true;
+				log(`${dest.label} unavailable: ${String(error)}${this.authHint(dest, error)}`);
+			}
+		}
+		return { active, anyError: isAnyError };
+	}
+
+	private async deliverBlock(
+		block: DeliveryBlock,
+		active: TimeDestination[],
+		disabled: Set<string>
+	): Promise<boolean> {
+		const { store, log } = this.deps;
+		const markerId = block.segmentIds[0];
+		if (!store.claim(markerId)) {
+			return false;
+		}
+		let isAnyError = false;
+		for (const dest of active) {
+			if (disabled.has(dest.id) || store.isDelivered(markerId, dest.id)) {
+				continue;
+			}
+			try {
+				const ref = await dest.deliver(block);
+				this.deps.onDelivered?.(dest.id, ref, block);
+				for (const id of block.segmentIds) {
+					store.markDelivered(id, dest.id);
+				}
+				log(
+					`${dest.label} delivered ${block.projectName} ${block.branch ?? ''} ${block.start}..${block.end}`
+				);
+			} catch (error) {
+				if (error instanceof ConnectorError && error.isRetryable) {
+					isAnyError = true;
+					disabled.add(dest.id); // stop hammering a down backend this run
+				} else {
+					log(`${dest.label} skipped ${markerId}: ${String(error)}`);
+				}
+			}
+		}
+		return isAnyError;
+	}
+
+	private authHint(dest: TimeDestination, error: unknown): string {
+		if (error instanceof ConnectorError && error.status === 401) {
+			const command =
+				dest.id === 'timetagger'
+					? 'Time Tracker nt: Set TimeTagger Token'
+					: 'Time Tracker nt: Set SolidTime Token';
+			return ` (check your API token: "${command}")`;
+		}
+		return '';
+	}
 
 	async runOnce(): Promise<void> {
 		const { store, destinations, log, onStatus } = this.deps;
@@ -49,70 +114,5 @@ export class SyncEngine {
 
 		store.compact(enabledIds);
 		onStatus(store.listUndelivered(enabledIds).length, anyError);
-	}
-
-	private async prepareDestinations(
-		since: string
-	): Promise<{ active: TimeDestination[]; anyError: boolean }> {
-		const { destinations, log } = this.deps;
-		let anyError = false;
-		const active: TimeDestination[] = [];
-		for (const dest of destinations) {
-			try {
-				await dest.prepare(since);
-				active.push(dest);
-			} catch (error) {
-				anyError = true;
-				log(`${dest.label} unavailable: ${String(error)}${this.authHint(dest, error)}`);
-			}
-		}
-		return { active, anyError };
-	}
-
-	private async deliverBlock(
-		block: DeliveryBlock,
-		active: TimeDestination[],
-		disabled: Set<string>
-	): Promise<boolean> {
-		const { store, log } = this.deps;
-		const markerId = block.segmentIds[0];
-		if (!store.claim(markerId)) {
-			return false;
-		}
-		let anyError = false;
-		for (const dest of active) {
-			if (disabled.has(dest.id) || store.isDelivered(markerId, dest.id)) {
-				continue;
-			}
-			try {
-				const ref = await dest.deliver(block);
-				this.deps.onDelivered?.(dest.id, ref, block);
-				for (const id of block.segmentIds) {
-					store.markDelivered(id, dest.id);
-				}
-				log(
-					`${dest.label} delivered ${block.projectName} ${block.branch ?? ''} ${block.start}..${block.end}`
-				);
-			} catch (error) {
-				if (error instanceof ConnectorError && error.retryable) {
-					anyError = true;
-					disabled.add(dest.id); // stop hammering a down backend this run
-				} else {
-					log(`${dest.label} skipped ${markerId}: ${String(error)}`);
-				}
-			}
-		}
-		return anyError;
-	}
-
-	private authHint(dest: TimeDestination, error: unknown): string {
-		if (error instanceof ConnectorError && error.status === 401) {
-			const command =
-				dest.id === 'timetagger'
-					? 'Time Tracker nt: Set TimeTagger Token'
-					: 'Time Tracker nt: Set SolidTime Token';
-			return ` (check your API token: "${command}")`;
-		}
-		return '';
 	}
 }

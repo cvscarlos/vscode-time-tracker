@@ -34,9 +34,12 @@ suite('TimetaggerClient.putRecords', () => {
 		let seen: { url: string; init: RequestInit } | undefined;
 		const fetchStub = async (url: string, init: RequestInit) => {
 			seen = { url, init };
-			return new Response(JSON.stringify({ accepted: ['k1'], failed: [], errors: [] }), {
-				status: 200,
-			});
+			return Response.json(
+				{ accepted: ['k1'], failed: [], errors: [] },
+				{
+					status: 200,
+				}
+			);
 		};
 		const client = new TimetaggerClient('https://timetagger.app', 'tok', fetchStub as typeof fetch);
 		await client.putRecords([record]);
@@ -51,7 +54,7 @@ suite('TimetaggerClient.putRecords', () => {
 		const client = new TimetaggerClient('https://timetagger.app', 'tok', fetchStub);
 		await assert.rejects(
 			() => client.putRecords([record]),
-			(e: unknown) => e instanceof ConnectorError && e.status === 401 && e.retryable === false
+			(e: unknown) => e instanceof ConnectorError && e.status === 401 && e.isRetryable === false
 		);
 	});
 
@@ -60,7 +63,7 @@ suite('TimetaggerClient.putRecords', () => {
 		const client = new TimetaggerClient('https://timetagger.app', 'tok', fetchStub);
 		await assert.rejects(
 			() => client.putRecords([record]),
-			(e: unknown) => e instanceof ConnectorError && e.retryable === true
+			(e: unknown) => e instanceof ConnectorError && e.isRetryable === true
 		);
 	});
 
@@ -78,7 +81,7 @@ suite('TimetaggerClient.putRecords', () => {
 		const client = new TimetaggerClient('https://timetagger.app', 'tok', fetchStub);
 		await assert.rejects(
 			() => client.putRecords([record]),
-			(e: unknown) => e instanceof ConnectorError && e.retryable === true
+			(e: unknown) => e instanceof ConnectorError && e.isRetryable === true
 		);
 	});
 });

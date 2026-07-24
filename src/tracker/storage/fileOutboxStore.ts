@@ -43,10 +43,10 @@ function reconstructSegments(
 		// filtered (now === undefined) or its last checkpoint is old enough that
 		// no live window could still own it. A fresh open belongs to a running
 		// window and would otherwise be delivered truncated at its checkpoint.
-		const stale =
+		const isStale =
 			options?.now === undefined ||
 			options.now - Date.parse(checkpoint.lastActivity) >= STALE_OPEN_MS;
-		if (!stale) {
+		if (!isStale) {
 			continue;
 		}
 		const activeMilliseconds = Date.parse(checkpoint.lastActivity) - Date.parse(open.start);
@@ -88,6 +88,92 @@ export class FileOutboxStore implements Store {
 		fs.mkdirSync(directory, { recursive: true });
 		fs.mkdirSync(this.claimsDir, { recursive: true });
 		fs.mkdirSync(this.deliveredDir, { recursive: true });
+	}
+
+	private isFullyDelivered(segmentId: string, enabledIds: string[]): boolean {
+		return enabledIds.length > 0 && enabledIds.every((id) => this.isDelivered(segmentId, id));
+	}
+
+	private presentSegmentIds(): Set<string> {
+		const ids = new Set<string>();
+		for (const record of this.readAllRecords()) {
+			ids.add(record.type === 'close' ? record.segment.id : record.id);
+		}
+		return ids;
+	}
+
+	private isClaimedByOther(segmentId: string): boolean {
+		const file = path.join(this.claimsDir, `${segmentId}.claim`);
+		const claim = this.readClaim(file);
+		if (!claim || this.isClaimStale(claim.claimedAtMs)) {
+			return false;
+		}
+		return claim.instanceId !== this.instanceId;
+	}
+
+	private isClaimStale(claimedAtMs: number): boolean {
+		return this.now().getTime() - claimedAtMs > CLAIM_LEASE_MS;
+	}
+
+	private readClaim(file: string): { instanceId: string; claimedAtMs: number } | undefined {
+		try {
+			const content = fs.readFileSync(file, 'utf8');
+			const [instanceId, timestamp] = content.split(' ', 2);
+			const claimedAtMs = Date.parse(timestamp);
+			if (!instanceId || Number.isNaN(claimedAtMs)) {
+				return undefined;
+			}
+			return { instanceId, claimedAtMs };
+		} catch {
+			return undefined;
+		}
+	}
+
+	private readAllRecords(): JournalRecord[] {
+		const records: JournalRecord[] = [];
+		for (const name of this.journalFiles()) {
+			const content = fs.readFileSync(path.join(this.directory, name), 'utf8');
+			const lines = content.split('\n').filter((line) => line.trim() !== '');
+			for (const line of lines) {
+				try {
+					records.push(JSON.parse(line) as JournalRecord);
+				} catch {
+					// Append-only: only a torn trailing line can be invalid; skip it.
+				}
+			}
+		}
+		return records;
+	}
+
+	private journalFiles(): string[] {
+		const files = fs.readdirSync(this.directory).filter((name) => name.endsWith('.jsonl'));
+		files.sort((a, b) => a.localeCompare(b));
+		return files;
+	}
+
+	private dateStamp(): string {
+		return this.now().toISOString().slice(0, 10);
+	}
+
+	private tryRemove(file: string): void {
+		try {
+			fs.rmSync(file);
+		} catch {
+			// already gone
+		}
+	}
+
+	private removeStaleTombstones(presentIds: Set<string>): void {
+		for (const tombstone of fs.readdirSync(this.deliveredDir)) {
+			const segmentId = tombstone.includes('.')
+				? tombstone.slice(0, tombstone.indexOf('.'))
+				: tombstone;
+			if (presentIds.has(segmentId)) {
+				continue;
+			}
+			this.tryRemove(path.join(this.deliveredDir, tombstone));
+			this.tryRemove(path.join(this.claimsDir, `${segmentId}.claim`));
+		}
 	}
 
 	public append(record: JournalRecord): void {
@@ -136,12 +222,8 @@ export class FileOutboxStore implements Store {
 		this.tryRemove(path.join(this.claimsDir, `${segmentId}.claim`));
 	}
 
-	private isFullyDelivered(segmentId: string, enabledIds: string[]): boolean {
-		return enabledIds.length > 0 && enabledIds.every((id) => this.isDelivered(segmentId, id));
-	}
-
 	public compact(enabledIds: string[]): void {
-		const fullyDelivered = (segmentId: string): boolean =>
+		const isSegmentFullyDelivered = (segmentId: string): boolean =>
 			this.isFullyDelivered(segmentId, enabledIds);
 		// Only rewrite files owned by this instance. Rewriting another live
 		// window's file could clobber a record it appended between our read and
@@ -157,7 +239,7 @@ export class FileOutboxStore implements Store {
 						return false;
 					}
 					const segmentId = segmentIdOf(line);
-					return segmentId !== undefined && !fullyDelivered(segmentId);
+					return segmentId !== undefined && !isSegmentFullyDelivered(segmentId);
 				});
 			if (kept.length === 0) {
 				this.tryRemove(full);
@@ -177,25 +259,7 @@ export class FileOutboxStore implements Store {
 		// present in any journal file (its owning instance eventually compacts
 		// it). listUndelivered() excludes tombstoned ids, so the segment stays
 		// suppressed meanwhile.
-		const presentIds = this.presentSegmentIds();
-		for (const tombstone of fs.readdirSync(this.deliveredDir)) {
-			const segmentId = tombstone.includes('.')
-				? tombstone.slice(0, tombstone.indexOf('.'))
-				: tombstone;
-			if (presentIds.has(segmentId)) {
-				continue;
-			}
-			this.tryRemove(path.join(this.deliveredDir, tombstone));
-			this.tryRemove(path.join(this.claimsDir, `${segmentId}.claim`));
-		}
-	}
-
-	private presentSegmentIds(): Set<string> {
-		const ids = new Set<string>();
-		for (const record of this.readAllRecords()) {
-			ids.add(record.type === 'close' ? record.segment.id : record.id);
-		}
-		return ids;
+		this.removeStaleTombstones(this.presentSegmentIds());
 	}
 
 	public isDelivered(segmentId: string, destinationId: string): boolean {
@@ -205,69 +269,6 @@ export class FileOutboxStore implements Store {
 		// Migration: a bare tombstone (no destination suffix) predates multi-backend
 		// support and represents a solidtime delivery.
 		return destinationId === 'solidtime' && fs.existsSync(path.join(this.deliveredDir, segmentId));
-	}
-
-	private isClaimedByOther(segmentId: string): boolean {
-		const file = path.join(this.claimsDir, `${segmentId}.claim`);
-		const claim = this.readClaim(file);
-		if (!claim || this.isClaimStale(claim.claimedAtMs)) {
-			return false;
-		}
-		return claim.instanceId !== this.instanceId;
-	}
-
-	private isClaimStale(claimedAtMs: number): boolean {
-		return this.now().getTime() - claimedAtMs > CLAIM_LEASE_MS;
-	}
-
-	private readClaim(file: string): { instanceId: string; claimedAtMs: number } | undefined {
-		try {
-			const content = fs.readFileSync(file, 'utf8');
-			const [instanceId, timestamp] = content.split(' ');
-			const claimedAtMs = Date.parse(timestamp);
-			if (!instanceId || Number.isNaN(claimedAtMs)) {
-				return undefined;
-			}
-			return { instanceId, claimedAtMs };
-		} catch {
-			return undefined;
-		}
-	}
-
-	private readAllRecords(): JournalRecord[] {
-		const records: JournalRecord[] = [];
-		for (const name of this.journalFiles()) {
-			const content = fs.readFileSync(path.join(this.directory, name), 'utf8');
-			for (const line of content.split('\n')) {
-				if (line.trim() === '') {
-					continue;
-				}
-				try {
-					records.push(JSON.parse(line) as JournalRecord);
-				} catch {
-					// Append-only: only a torn trailing line can be invalid; skip it.
-				}
-			}
-		}
-		return records;
-	}
-
-	private journalFiles(): string[] {
-		const files = fs.readdirSync(this.directory).filter((name) => name.endsWith('.jsonl'));
-		files.sort();
-		return files;
-	}
-
-	private dateStamp(): string {
-		return this.now().toISOString().slice(0, 10);
-	}
-
-	private tryRemove(file: string): void {
-		try {
-			fs.rmSync(file);
-		} catch {
-			// already gone
-		}
 	}
 }
 

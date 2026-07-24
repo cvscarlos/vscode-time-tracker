@@ -27,6 +27,32 @@ const COMMITS_KEY = 'nttitles:commits';
 export class TitleStore {
 	constructor(private readonly memento: MementoLike) {}
 
+	private readEntries(): DeliveredEntry[] {
+		const raw = this.memento.get<Array<Record<string, unknown>>>(ENTRIES_KEY) ?? [];
+		return raw.map((e) => this.migrate(e));
+	}
+
+	private migrate(e: Record<string, unknown>): DeliveredEntry {
+		// Old shape: { entryId, branch, endMs, markerId, titled } (solidtime only).
+		if (typeof e.destination === 'string' && typeof e.ref === 'string') {
+			return e as unknown as DeliveredEntry;
+		}
+		return {
+			destination: 'solidtime',
+			ref: String(e.entryId ?? ''),
+			markerId: String(e.markerId ?? ''),
+			projectName: '',
+			branch: e.branch as string | undefined,
+			startMs: 0,
+			endMs: Number(e.endMs ?? 0),
+			titled: Boolean(e.titled),
+		};
+	}
+
+	private readCommits(): CommitInfo[] {
+		return this.memento.get<CommitInfo[]>(COMMITS_KEY) ?? [];
+	}
+
 	recordDelivered(entry: Omit<DeliveredEntry, 'titled'>): Thenable<void> {
 		if (entry.ref === '') {
 			return Promise.resolve();
@@ -58,40 +84,14 @@ export class TitleStore {
 		return this.memento.update(ENTRIES_KEY, entries);
 	}
 
-	prune(nowMs: number, maxAgeMs: number): Thenable<void> {
+	async prune(nowMs: number, maxAgeMs: number): Promise<void> {
 		const cutoffMs = nowMs - maxAgeMs;
 		const entries = this.readEntries().filter((e) => !e.titled || e.endMs >= cutoffMs);
 		const commits = this.readCommits().filter((c) => c.timeMs >= cutoffMs);
-		return Promise.all([
+		await Promise.all([
 			this.memento.update(ENTRIES_KEY, entries),
 			this.memento.update(COMMITS_KEY, commits),
-		]).then(() => {});
-	}
-
-	private readEntries(): DeliveredEntry[] {
-		const raw = this.memento.get<Array<Record<string, unknown>>>(ENTRIES_KEY) ?? [];
-		return raw.map((e) => this.migrate(e));
-	}
-
-	private migrate(e: Record<string, unknown>): DeliveredEntry {
-		// Old shape: { entryId, branch, endMs, markerId, titled } (solidtime only).
-		if (typeof e.destination === 'string' && typeof e.ref === 'string') {
-			return e as unknown as DeliveredEntry;
-		}
-		return {
-			destination: 'solidtime',
-			ref: String(e.entryId ?? ''),
-			markerId: String(e.markerId ?? ''),
-			projectName: '',
-			branch: e.branch as string | undefined,
-			startMs: 0,
-			endMs: Number(e.endMs ?? 0),
-			titled: Boolean(e.titled),
-		};
-	}
-
-	private readCommits(): CommitInfo[] {
-		return this.memento.get<CommitInfo[]>(COMMITS_KEY) ?? [];
+		]);
 	}
 }
 

@@ -11,7 +11,7 @@ export class ConnectorError extends Error {
 	constructor(
 		message: string,
 		readonly status: number | undefined,
-		readonly retryable: boolean
+		readonly isRetryable: boolean
 	) {
 		super(message);
 	}
