@@ -15,6 +15,35 @@ function toSolidtimeDate(iso: string): string {
 	return new Date(iso).toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
+// SolidTime's own project-color palette (its create-project picker). New projects
+// pick one at random so they aren't all the same gray. Lowercase hex — SolidTime
+// rejects uppercase.
+export const PROJECT_COLORS = [
+	'#ef5350',
+	'#ec407a',
+	'#ab47bc',
+	'#7e57c2',
+	'#5c6bc0',
+	'#42a5f5',
+	'#29b6f6',
+	'#26c6da',
+	'#26a69a',
+	'#66bb6a',
+	'#9ccc65',
+	'#d4e157',
+	'#ffee58',
+	'#ffca28',
+	'#ffa726',
+	'#ff7043',
+	'#8d6e63',
+	'#bdbdbd',
+	'#78909c',
+];
+
+function randomProjectColor(): string {
+	return PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)];
+}
+
 export class SolidtimeConnector implements SolidtimeConnectorLike {
 	private readonly fetchFn: typeof fetch;
 
@@ -51,7 +80,7 @@ export class SolidtimeConnector implements SolidtimeConnectorLike {
 		const data = await this.post<{ data: { id: string } }>(
 			`/api/v1/organizations/${organizationId}/projects`,
 			// eslint-disable-next-line unicorn/no-null -- solidtime requires client_id to be present (nullable)
-			{ name, color: '#6c7280', is_billable: false, client_id: null }
+			{ name, color: randomProjectColor(), is_billable: false, client_id: null }
 		);
 		return data.data.id;
 	}

@@ -1,6 +1,6 @@
 import * as assert from 'node:assert';
 import { ConnectorError, markerFor } from '../connector';
-import { SolidtimeConnector } from './solidtimeConnector';
+import { PROJECT_COLORS, SolidtimeConnector } from './solidtimeConnector';
 
 // Minimal fake fetch: maps "METHOD path" -> handler returning {status, body}
 function fakeFetch(routes: Record<string, { status: number; body?: unknown }>): typeof fetch {
@@ -74,6 +74,30 @@ suite('SolidtimeConnector', () => {
 		// solidtime requires Y-m-d\TH:i:s\Z (no milliseconds) — else HTTP 422
 		assert.equal(sent.start, '2026-07-21T09:00:00Z');
 		assert.equal(sent.end, '2026-07-21T09:30:00Z');
+	});
+
+	test('createProject sends a random color from the SolidTime palette (lowercase hex)', async () => {
+		const seen: string[] = [];
+		const f = (async (_input: unknown, init: RequestInit) => {
+			const body = JSON.parse(init.body as string) as { color: string };
+			seen.push(body.color);
+			return {
+				ok: true,
+				status: 201,
+				json: async () => ({ data: { id: 'p-new' } }),
+				text: async () => JSON.stringify({ data: { id: 'p-new' } }),
+			} as Response;
+		}) as unknown as typeof fetch;
+		const c = new SolidtimeConnector(base, 'tok', 'org-1', f);
+		for (let i = 0; i < 20; i++) {
+			assert.equal(await c.createProject('org-1', `proj-${i}`), 'p-new');
+		}
+		for (const color of seen) {
+			assert.ok(PROJECT_COLORS.includes(color), `${color} is a palette color`);
+			assert.match(color, /^#[0-9a-f]{6}$/); // lowercase hex, else SolidTime 422s
+		}
+		// over 20 creations we expect at least two distinct colors (randomized, not fixed)
+		assert.ok(new Set(seen).size > 1, 'colors vary across projects');
 	});
 
 	test('updateEntryDescription issues a PUT with only the description field', async () => {
