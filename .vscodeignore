@@ -23,6 +23,7 @@ tmp/**
 
 # Repo metadata
 .gitignore
+.github/**
 docs/**
 ARCHITECTURE.md
 
