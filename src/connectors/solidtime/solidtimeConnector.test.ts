@@ -100,6 +100,56 @@ suite('SolidtimeConnector', () => {
 		assert.ok(new Set(seen).size > 1, 'colors vary across projects');
 	});
 
+	test('listProjects returns each project with its color and preserved fields', async () => {
+		const f = fakeFetch({
+			'GET /api/v1/organizations/org-1/projects': {
+				status: 200,
+				body: {
+					data: [
+						{ id: 'p-1', name: 'a', color: '#6c7280', is_billable: false, client_id: 'c-1' },
+						{ id: 'p-2', name: 'b', color: '#42a5f5', is_billable: true, client_id: 'c-2' },
+					],
+				},
+			},
+		});
+		const c = new SolidtimeConnector(base, 'tok', 'org-1', f);
+		const projects = await c.listProjects('org-1');
+		assert.deepEqual(projects[0], {
+			id: 'p-1',
+			name: 'a',
+			color: '#6c7280',
+			isBillable: false,
+			clientId: 'c-1',
+		});
+		assert.equal(projects[1].color, '#42a5f5');
+	});
+
+	test('setProjectColor PUTs the project, changing only the color', async () => {
+		let method: string | undefined;
+		let url: string | undefined;
+		let sent: Record<string, unknown> | undefined;
+		const f = (async (input: string, init: RequestInit) => {
+			method = init.method;
+			url = input;
+			sent = JSON.parse(init.body as string);
+			return { ok: true, status: 200, json: async () => ({}), text: async () => '' } as Response;
+		}) as unknown as typeof fetch;
+		const c = new SolidtimeConnector(base, 'tok', 'org-1', f);
+		await c.setProjectColor(
+			'org-1',
+			{ id: 'p-1', name: 'payments', color: '#6c7280', isBillable: true, clientId: 'cl-9' },
+			'#42a5f5'
+		);
+		assert.equal(method, 'PUT');
+		assert.ok(url?.endsWith('/api/v1/organizations/org-1/projects/p-1'));
+		assert.deepEqual(sent, {
+			name: 'payments',
+			color: '#42a5f5',
+			is_billable: true,
+			client_id: 'cl-9',
+		});
+	});
+
 	test('updateEntryDescription issues a PUT with only the description field', async () => {
 		let method: string | undefined;
 		let path: string | undefined;

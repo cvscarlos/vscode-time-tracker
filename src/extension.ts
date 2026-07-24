@@ -3,7 +3,11 @@ import path from 'node:path';
 import * as vscode from 'vscode';
 import { Backend, clearToken, getToken, setToken } from './configuration/secrets';
 import { getSolidtimeConfig, getTimetaggerConfig } from './configuration/settings';
-import { SolidtimeConnector } from './connectors/solidtime/solidtimeConnector';
+import {
+	LEGACY_GRAY,
+	randomProjectColor,
+	SolidtimeConnector,
+} from './connectors/solidtime/solidtimeConnector';
 import { SolidtimeDestination } from './connectors/solidtime/solidtimeDestination';
 import { TimetaggerClient } from './connectors/timetagger/timetaggerClient';
 import { TimetaggerDestination } from './connectors/timetagger/timetaggerDestination';
@@ -297,7 +301,53 @@ export function activate(context: vscode.ExtensionContext): void {
 			await clearToken(context, 'timetagger');
 			vscode.window.showInformationMessage('TimeTagger API token deleted.');
 		}),
-		vscode.commands.registerCommand('ntTimeTracker.syncNow', () => void runSync())
+		vscode.commands.registerCommand('ntTimeTracker.syncNow', () => void runSync()),
+		vscode.commands.registerCommand('ntTimeTracker.recolorGrayProjects', async () => {
+			const token = await getToken(context, 'solidtime');
+			if (!token) {
+				await vscode.window.showInformationMessage(
+					'Time Tracker nt: set your SolidTime token first.'
+				);
+				return;
+			}
+			const cfg = getSolidtimeConfig();
+			const connector = new SolidtimeConnector(cfg.apiUrl, token, cfg.organizationId);
+			try {
+				const { organizationId } = await connector.resolveMember();
+				const projects = await connector.listProjects(organizationId);
+				const gray = projects.filter((p) => p.color === LEGACY_GRAY);
+				if (gray.length === 0) {
+					await vscode.window.showInformationMessage(
+						'Time Tracker nt: no gray SolidTime projects to recolor.'
+					);
+					return;
+				}
+				const choice = await vscode.window.showInformationMessage(
+					`Recolor ${gray.length} gray SolidTime project(s) with random colors? Projects you've already colored are left untouched.`,
+					{ modal: true },
+					'Recolor'
+				);
+				if (choice !== 'Recolor') {
+					return;
+				}
+				let done = 0;
+				for (const project of gray) {
+					try {
+						await connector.setProjectColor(organizationId, project, randomProjectColor());
+						done++;
+					} catch (error) {
+						output.appendLine(`recolor failed for ${project.name}: ${String(error)}`);
+					}
+				}
+				output.appendLine(`recolored ${done}/${gray.length} gray project(s)`);
+				await vscode.window.showInformationMessage(
+					`Time Tracker nt: recolored ${done} of ${gray.length} gray project(s).`
+				);
+			} catch (error) {
+				output.appendLine(`recolor failed: ${String(error)}`);
+				await vscode.window.showErrorMessage(`Time Tracker nt: recolor failed — ${String(error)}`);
+			}
+		})
 	);
 
 	const version = context.extension.packageJSON.version as string;

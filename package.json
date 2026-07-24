@@ -57,6 +57,10 @@
 			{
 				"command": "ntTimeTracker.syncNow",
 				"title": "Time Tracker nt: Sync Now"
+			},
+			{
+				"command": "ntTimeTracker.recolorGrayProjects",
+				"title": "Time Tracker nt: Recolor Gray SolidTime Projects"
 			}
 		],
 		"configuration": {

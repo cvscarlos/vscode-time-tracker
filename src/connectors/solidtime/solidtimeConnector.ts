@@ -40,8 +40,21 @@ export const PROJECT_COLORS = [
 	'#78909c',
 ];
 
-function randomProjectColor(): string {
+// The fixed gray new projects used before colors were randomized (v0.3.4). NOT in
+// SolidTime's palette, so matching it exactly only ever hits projects this
+// extension auto-created with the old default — never one the user colored.
+export const LEGACY_GRAY = '#6c7280';
+
+export function randomProjectColor(): string {
 	return PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)];
+}
+
+export interface SolidtimeProject {
+	id: string;
+	name: string;
+	color: string;
+	isBillable: boolean;
+	clientId: string | null;
 }
 
 export class SolidtimeConnector implements SolidtimeConnectorLike {
@@ -148,6 +161,40 @@ export class SolidtimeConnector implements SolidtimeConnectorLike {
 	): Promise<void> {
 		await this.request('PUT', `/api/v1/organizations/${organizationId}/time-entries/${entryId}`, {
 			description,
+		});
+	}
+
+	async listProjects(organizationId: string): Promise<SolidtimeProject[]> {
+		const data = await this.get<{
+			data: Array<{
+				id: string;
+				name: string;
+				color: string;
+				is_billable: boolean;
+				client_id: string | null;
+			}>;
+		}>(`/api/v1/organizations/${organizationId}/projects`);
+		return data.data.map((p) => ({
+			id: p.id,
+			name: p.name,
+			color: p.color,
+			isBillable: p.is_billable,
+			clientId: p.client_id,
+		}));
+	}
+
+	async setProjectColor(
+		organizationId: string,
+		project: SolidtimeProject,
+		color: string
+	): Promise<void> {
+		// SolidTime's project PUT expects the full create-shaped body; preserve the
+		// project's other fields and change only the color.
+		await this.request('PUT', `/api/v1/organizations/${organizationId}/projects/${project.id}`, {
+			name: project.name,
+			color,
+			is_billable: project.isBillable,
+			client_id: project.clientId,
 		});
 	}
 
