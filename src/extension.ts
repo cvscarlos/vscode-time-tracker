@@ -237,7 +237,17 @@ export function activate(context: vscode.ExtensionContext): void {
 		}),
 		vscode.window.onDidChangeActiveTextEditor(refreshContext),
 		vscode.workspace.onDidChangeWorkspaceFolders(refreshContext),
-		watchGitContext(refreshContext)
+		watchGitContext(refreshContext),
+		vscode.workspace.onDidChangeConfiguration((e) => {
+			if (!e.affectsConfiguration('ntTimeTracker.enabled')) {
+				return;
+			}
+			machine?.setEnabled(
+				vscode.workspace.getConfiguration('ntTimeTracker').get<boolean>('enabled', true),
+				Date.now()
+			);
+			syncStatus();
+		})
 	);
 
 	const timer = setInterval(() => {

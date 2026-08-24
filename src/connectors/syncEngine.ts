@@ -60,10 +60,18 @@ export class SyncEngine {
 					`${dest.label} delivered ${block.projectName} ${block.branch ?? ''} ${block.start}..${block.end}`
 				);
 			} catch (error) {
-				if (error instanceof ConnectorError && error.isRetryable) {
-					isAnyError = true;
-					disabled.add(dest.id); // stop hammering a down backend this run
-				} else {
+				// Every delivery failure is an error for this run — including
+				// non-retryable ones (e.g. a 401), which were previously logged as a
+				// silent "skip" while the run and destination status stayed healthy.
+				isAnyError = true;
+				const isRetryable = error instanceof ConnectorError && error.isRetryable;
+				const isUnauthorized = error instanceof ConnectorError && error.status === 401;
+				if (isRetryable || isUnauthorized) {
+					disabled.add(dest.id); // stop hammering this destination for the rest of the run
+				}
+				if (isUnauthorized) {
+					log(`${dest.label} skipped ${markerId}: ${String(error)}${this.authHint(dest, error)}`);
+				} else if (!isRetryable) {
 					log(`${dest.label} skipped ${markerId}: ${String(error)}`);
 				}
 			}
@@ -86,33 +94,45 @@ export class SyncEngine {
 		const { store, destinations, log, onStatus } = this.deps;
 		const enabledIds = destinations.map((d) => d.id);
 		const undelivered = store.listUndelivered(enabledIds);
-		const blocks = aggregate(undelivered, {
+		const { blocks, discarded } = aggregate(undelivered, {
 			nowMs: this.deps.now(),
 			settleMs: this.deps.settleMs,
 			mergeGapMs: this.deps.mergeGapMs,
 		});
 		log(`sync: ${undelivered.length} undelivered, ${blocks.length} block(s) ready`);
 		onStatus(undelivered.length, false);
-		if (blocks.length === 0 || destinations.length === 0) {
+		if (destinations.length === 0 || (blocks.length === 0 && discarded.length === 0)) {
 			return;
 		}
 
-		let since = blocks[0].start;
-		for (const block of blocks) {
-			if (block.start < since) {
-				since = block.start;
+		let isAnyError = false;
+		if (blocks.length > 0) {
+			let since = blocks[0].start;
+			for (const block of blocks) {
+				if (block.start < since) {
+					since = block.start;
+				}
+			}
+
+			const { active, anyError: prepareError } = await this.prepareDestinations(since);
+			isAnyError = prepareError;
+
+			const disabled = new Set<string>();
+			for (const block of blocks) {
+				isAnyError = (await this.deliverBlock(block, active, disabled)) || isAnyError;
 			}
 		}
 
-		const { active, anyError: prepareError } = await this.prepareDestinations(since);
-		let anyError = prepareError;
-
-		const disabled = new Set<string>();
-		for (const block of blocks) {
-			anyError = (await this.deliverBlock(block, active, disabled)) || anyError;
+		// Segments whose block settled but rounded to under a minute can never grow
+		// into a deliverable block. Mark them delivered to every enabled
+		// destination so compact() drops them instead of rescanning them forever.
+		for (const id of discarded) {
+			for (const dest of destinations) {
+				store.markDelivered(id, dest.id);
+			}
 		}
 
 		store.compact(enabledIds);
-		onStatus(store.listUndelivered(enabledIds).length, anyError);
+		onStatus(store.listUndelivered(enabledIds).length, isAnyError);
 	}
 }

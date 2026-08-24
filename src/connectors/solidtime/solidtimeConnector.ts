@@ -133,12 +133,16 @@ export class SolidtimeConnector implements SolidtimeConnectorLike {
 	}
 
 	async createProject(organizationId: string, name: string): Promise<string> {
-		const data = await this.post<{ data: { id: string } }>(
+		const data = await this.post<{ data: { id?: string } }>(
 			`/api/v1/organizations/${organizationId}/projects`,
 			// eslint-disable-next-line unicorn/no-null -- solidtime requires client_id to be present (nullable)
 			{ name, color: randomProjectColor(), is_billable: false, client_id: null }
 		);
-		return data.data.id;
+		const id = data.data?.id;
+		if (typeof id !== 'string' || id === '') {
+			throw new ConnectorError('solidtime: create returned no id', undefined, true);
+		}
+		return id;
 	}
 
 	async findTaskByName(
@@ -183,7 +187,7 @@ export class SolidtimeConnector implements SolidtimeConnectorLike {
 
 	async createEntry(organizationId: string, memberId: string, entry: EntryInput): Promise<string> {
 		const description = `${entry.description} ${markerFor(entry.segmentId)}`.trim();
-		const data = await this.post<{ data: { id: string } }>(
+		const data = await this.post<{ data: { id?: string } }>(
 			`/api/v1/organizations/${organizationId}/time-entries`,
 			{
 				member_id: memberId,
@@ -196,7 +200,11 @@ export class SolidtimeConnector implements SolidtimeConnectorLike {
 				tags: [],
 			}
 		);
-		return data.data.id;
+		const id = data.data?.id;
+		if (typeof id !== 'string' || id === '') {
+			throw new ConnectorError('solidtime: create returned no id', undefined, true);
+		}
+		return id;
 	}
 
 	async updateEntryDescription(

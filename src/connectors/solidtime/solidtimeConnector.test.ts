@@ -76,6 +76,33 @@ suite('SolidtimeConnector', () => {
 		assert.equal(sent.end, '2026-07-21T09:30:00Z');
 	});
 
+	test('createEntry rejects with a retryable ConnectorError when the response carries no id', async () => {
+		// A 2xx `{data:{}}` means the entry may or may not have been created
+		// remotely with no id to reference it by — treat it as unconfirmed rather
+		// than silently marking the segment delivered.
+		const f = (async () =>
+			({
+				ok: true,
+				status: 201,
+				json: async () => ({ data: {} }),
+				text: async () => JSON.stringify({ data: {} }),
+			}) as Response) as unknown as typeof fetch;
+		const c = new SolidtimeConnector(base, 'tok', 'org-1', f);
+		await assert.rejects(
+			() =>
+				c.createEntry('org-1', 'mem-1', {
+					segmentId: 'seg-9',
+					start: '2026-07-21T09:00:00.000Z',
+					end: '2026-07-21T09:30:00.000Z',
+					projectId: 'p-1',
+					// eslint-disable-next-line unicorn/no-null -- EntryInput contract uses null for "no task"
+					taskId: null,
+					description: 'feature-branch',
+				}),
+			(e: unknown) => e instanceof ConnectorError && e.isRetryable === true
+		);
+	});
+
 	test('createProject sends a random color from the SolidTime palette (lowercase hex)', async () => {
 		const seen: string[] = [];
 		const f = (async (_input: unknown, init: RequestInit) => {

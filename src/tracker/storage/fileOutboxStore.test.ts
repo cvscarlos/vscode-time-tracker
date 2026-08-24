@@ -238,6 +238,21 @@ suite('FileOutboxStore', () => {
 		assert.equal(store.recover().length, 0); // now purged
 	});
 
+	test('listUndelivered stays deterministic across windows even after one claims the segment', () => {
+		// Both windows must aggregate the SAME undelivered set so they derive the
+		// same block and the same segmentIds[0] marker — otherwise window B would
+		// re-aggregate a different (smaller) block and re-deliver part of it under
+		// a new marker. listUndelivered must not strip a segment just because
+		// another window holds its claim.
+		const dir = tempDir();
+		const a = new FileOutboxStore(dir, 'winA', clock);
+		const b = new FileOutboxStore(dir, 'winB', clock);
+		a.append({ type: 'close', segment: seg('shared', 1000) });
+		assert.equal(a.claim('shared'), true);
+		const stillListed = b.listUndelivered(['solidtime']).map((s) => s.id);
+		assert.deepEqual(stillListed, ['shared']);
+	});
+
 	test('a bare (pre-TimeTagger) tombstone is read as a solidtime delivery', () => {
 		const dir = tempDir();
 		const store = new FileOutboxStore(dir, 'inst', () => new Date(1000));

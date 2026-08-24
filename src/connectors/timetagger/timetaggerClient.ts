@@ -46,12 +46,16 @@ export class TimetaggerClient {
 			throw new ConnectorError(
 				`timetagger ${response.status}: ${body}`,
 				response.status,
-				response.status >= 500
+				response.status >= 500 || response.status === 429
 			);
 		}
-		let result: { failed?: string[]; errors?: string[] };
+		let result: { accepted?: string[]; failed?: string[]; errors?: string[] };
 		try {
-			result = (await response.json()) as { failed?: string[]; errors?: string[] };
+			result = (await response.json()) as {
+				accepted?: string[];
+				failed?: string[];
+				errors?: string[];
+			};
 		} catch {
 			throw new ConnectorError('timetagger: invalid JSON response', response.status, true);
 		}
@@ -61,6 +65,14 @@ export class TimetaggerClient {
 				undefined,
 				true
 			);
+		}
+		const accepted = new Set(result.accepted);
+		const unacknowledged = records.some((record) => !accepted.has(record.key));
+		if (unacknowledged) {
+			// A 2xx with no failures/errors but a submitted key missing from
+			// `accepted` is unconfirmed, not rejected — retry rather than mark it
+			// delivered and lose it.
+			throw new ConnectorError('timetagger: records not acknowledged', undefined, true);
 		}
 	}
 }

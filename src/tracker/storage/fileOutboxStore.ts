@@ -102,15 +102,6 @@ export class FileOutboxStore implements Store {
 		return ids;
 	}
 
-	private isClaimedByOther(segmentId: string): boolean {
-		const file = path.join(this.claimsDir, `${segmentId}.claim`);
-		const claim = this.readClaim(file);
-		if (!claim || this.isClaimStale(claim.claimedAtMs)) {
-			return false;
-		}
-		return claim.instanceId !== this.instanceId;
-	}
-
 	private isClaimStale(claimedAtMs: number): boolean {
 		return this.now().getTime() - claimedAtMs > CLAIM_LEASE_MS;
 	}
@@ -195,10 +186,7 @@ export class FileOutboxStore implements Store {
 	}
 
 	public listUndelivered(enabledIds: string[]): LocalSegment[] {
-		return this.recover().filter(
-			(segment) =>
-				!this.isFullyDelivered(segment.id, enabledIds) && !this.isClaimedByOther(segment.id)
-		);
+		return this.recover().filter((segment) => !this.isFullyDelivered(segment.id, enabledIds));
 	}
 
 	public claim(segmentId: string): boolean {

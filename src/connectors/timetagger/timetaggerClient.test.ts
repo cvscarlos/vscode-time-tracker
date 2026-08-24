@@ -84,4 +84,28 @@ suite('TimetaggerClient.putRecords', () => {
 			(e: unknown) => e instanceof ConnectorError && e.isRetryable === true
 		);
 	});
+
+	test('raises a retryable ConnectorError when a submitted key is missing from a clean 2xx response', async () => {
+		// No failed/errors reported, but the submitted key never shows up as
+		// accepted either — unconfirmed, so it must be retried rather than
+		// treated as delivered.
+		const fetchStub = fakeStatusFetch(
+			200,
+			JSON.stringify({ accepted: [], failed: [], errors: [] })
+		);
+		const client = new TimetaggerClient('https://timetagger.app', 'tok', fetchStub);
+		await assert.rejects(
+			() => client.putRecords([record]),
+			(e: unknown) => e instanceof ConnectorError && e.isRetryable === true
+		);
+	});
+
+	test('raises a retryable ConnectorError on HTTP 429', async () => {
+		const fetchStub = fakeStatusFetch(429, 'too many requests');
+		const client = new TimetaggerClient('https://timetagger.app', 'tok', fetchStub);
+		await assert.rejects(
+			() => client.putRecords([record]),
+			(e: unknown) => e instanceof ConnectorError && e.status === 429 && e.isRetryable === true
+		);
+	});
 });
