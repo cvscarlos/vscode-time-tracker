@@ -219,9 +219,9 @@ export function activate(context: vscode.ExtensionContext): void {
 		generateId: () => crypto.randomUUID(),
 	});
 	machine.setEnabled(config.get<boolean>('enabled', true), Date.now());
-	machine.setContext(resolveContext());
+	machine.setContext(resolveContext(), Date.now());
 
-	const refreshContext = () => machine?.setContext(resolveContext());
+	const refreshContext = () => machine?.setContext(resolveContext(), Date.now());
 	const syncStatus = () => {
 		if (machine) {
 			statusBar.setState(machine.currentStatus(Date.now()));

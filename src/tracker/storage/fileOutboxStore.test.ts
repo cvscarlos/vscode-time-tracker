@@ -6,6 +6,7 @@ import { FileOutboxStore } from './fileOutboxStore';
 import { JournalRecord, LocalSegment, OpenRecord } from '../types';
 
 const clock = () => new Date('2026-07-21T10:00:00Z');
+const yesterday = () => new Date('2026-07-20T10:00:00Z');
 
 function tempDir(): string {
 	return fs.mkdtempSync(path.join(os.tmpdir(), 'nt-outbox-'));
@@ -76,10 +77,15 @@ suite('FileOutboxStore', () => {
 	test('a dangling open with a STALE checkpoint is recovered at the last checkpoint', () => {
 		const dir = tempDir();
 		const store = new FileOutboxStore(dir, 'other-window', clock);
-		// Clock is 10:00:00Z; checkpoint at 09:55 is 5 min old (>= 2 min) so the
-		// open is stale (crashed window) and recoverable.
+		// Clock is 10:00:00Z; the checkpoint was written at 09:55, 5 min ago
+		// (>= 2 min), so the open is stale (crashed window) and recoverable.
 		store.append({ ...open('c'), start: '2026-07-21T09:50:00.000Z' });
-		store.append({ type: 'checkpoint', id: 'c', lastActivity: '2026-07-21T09:55:00.000Z' });
+		store.append({
+			type: 'checkpoint',
+			id: 'c',
+			lastActivity: '2026-07-21T09:55:00.000Z',
+			at: '2026-07-21T09:55:00.000Z',
+		});
 		const reopened = new FileOutboxStore(dir, 'fresh', clock).recover();
 		assert.equal(reopened.length, 1);
 		assert.equal(reopened[0].id, 'c');
@@ -87,15 +93,52 @@ suite('FileOutboxStore', () => {
 		assert.equal(reopened[0].activeMilliseconds, 300_000);
 	});
 
-	test('a FRESH dangling open (checkpoint within the last 120s) is NOT recovered', () => {
+	test('a FRESH dangling open (checkpoint written within the last 120s) is NOT recovered', () => {
 		const dir = tempDir();
 		const store = new FileOutboxStore(dir, 'other-window', clock);
-		// Clock is 10:00:00Z; checkpoint at 09:59:30 is only 30s old, so this open
-		// belongs to a live window still writing checkpoints and must be skipped.
+		// Clock is 10:00:00Z; the checkpoint was written at 09:59:30, only 30s
+		// ago, so this open belongs to a live window still writing checkpoints
+		// and must be skipped.
 		store.append(open('c'));
-		store.append({ type: 'checkpoint', id: 'c', lastActivity: '2026-07-21T09:59:30.000Z' });
+		store.append({
+			type: 'checkpoint',
+			id: 'c',
+			lastActivity: '2026-07-21T09:59:30.000Z',
+			at: '2026-07-21T09:59:30.000Z',
+		});
 		const reopened = new FileOutboxStore(dir, 'fresh', clock).recover();
 		assert.equal(reopened.length, 0);
+	});
+
+	test('staleness and the recovered end key off the checkpoint write time (at), not lastActivity', () => {
+		const liveDir = tempDir();
+		const liveStore = new FileOutboxStore(liveDir, 'other-window', clock);
+		// Focused-but-reading window: no edits, so lastActivity is stale (20 min
+		// old), but the checkpoint write itself (at) is fresh — the window is
+		// still alive and must not be misread as crashed/truncated.
+		liveStore.append({ ...open('c'), start: '2026-07-21T09:40:00.000Z' });
+		liveStore.append({
+			type: 'checkpoint',
+			id: 'c',
+			lastActivity: '2026-07-21T09:40:00.000Z',
+			at: '2026-07-21T09:59:30.000Z',
+		});
+		assert.equal(new FileOutboxStore(liveDir, 'fresh', clock).recover().length, 0);
+
+		const crashedDir = tempDir();
+		const crashedStore = new FileOutboxStore(crashedDir, 'other-window', clock);
+		// Crashed window: the checkpoint write itself is stale, so it recovers up
+		// to that write time — crediting the reading right up to the crash.
+		crashedStore.append({ ...open('d'), start: '2026-07-21T09:40:00.000Z' });
+		crashedStore.append({
+			type: 'checkpoint',
+			id: 'd',
+			lastActivity: '2026-07-21T09:40:00.000Z',
+			at: '2026-07-21T09:55:00.000Z',
+		});
+		const recovered = new FileOutboxStore(crashedDir, 'fresh', clock).recover();
+		assert.equal(recovered.length, 1);
+		assert.equal(recovered[0].end, '2026-07-21T09:55:00.000Z');
 	});
 
 	test('a dangling open with no checkpoint is dropped', () => {
@@ -107,10 +150,15 @@ suite('FileOutboxStore', () => {
 	test('a reconstructed dangling open below minActiveMs is NOT recovered', () => {
 		const dir = tempDir();
 		const writer = new FileOutboxStore(dir, 'other-window', clock);
-		// Stale checkpoint (5 min old vs the 10:00 clock) but only 5s of active
-		// time — below a 20s minimum, so it must be dropped, not resurrected.
+		// Stale checkpoint write (5 min old vs the 10:00 clock) but only 5s of
+		// active time — below a 20s minimum, so it must be dropped, not resurrected.
 		writer.append({ ...open('c'), start: '2026-07-21T09:55:00.000Z' });
-		writer.append({ type: 'checkpoint', id: 'c', lastActivity: '2026-07-21T09:55:05.000Z' });
+		writer.append({
+			type: 'checkpoint',
+			id: 'c',
+			lastActivity: '2026-07-21T09:55:05.000Z',
+			at: '2026-07-21T09:55:05.000Z',
+		});
 		const reopened = new FileOutboxStore(dir, 'fresh', clock, 20_000).recover();
 		assert.equal(reopened.length, 0);
 	});
@@ -118,9 +166,14 @@ suite('FileOutboxStore', () => {
 	test('a reconstructed dangling open at/above minActiveMs is recovered', () => {
 		const dir = tempDir();
 		const writer = new FileOutboxStore(dir, 'other-window', clock);
-		// Stale checkpoint with 30s of active time — at/above the 20s minimum.
+		// Stale checkpoint write with 30s of active time — at/above the 20s minimum.
 		writer.append({ ...open('c'), start: '2026-07-21T09:55:00.000Z' });
-		writer.append({ type: 'checkpoint', id: 'c', lastActivity: '2026-07-21T09:55:30.000Z' });
+		writer.append({
+			type: 'checkpoint',
+			id: 'c',
+			lastActivity: '2026-07-21T09:55:30.000Z',
+			at: '2026-07-21T09:55:30.000Z',
+		});
 		const reopened = new FileOutboxStore(dir, 'fresh', clock, 20_000).recover();
 		assert.equal(reopened.length, 1);
 		assert.equal(reopened[0].id, 'c');
@@ -194,6 +247,30 @@ suite('FileOutboxStore', () => {
 		const ids = new FileOutboxStore(dir, 'fresh', clock).recover().map((s) => s.id);
 		assert.deepEqual(ids, ['b']);
 		assert.ok(fs.existsSync(path.join(dir, 'win2-2026-07-21.jsonl')));
+	});
+
+	test('compact rewrites a different instance PRIOR-DATE file (safe: it can never receive new appends), but leaves its TODAY file alone', () => {
+		const dir = tempDir();
+		const closedWindow = new FileOutboxStore(dir, 'closed-window', yesterday);
+		closedWindow.append({ type: 'close', segment: seg('prior', 1000) });
+		const otherLiveWindow = new FileOutboxStore(dir, 'other-live-window', clock); // today
+		otherLiveWindow.append({ type: 'close', segment: seg('today', 1000) });
+
+		const fresh = new FileOutboxStore(dir, 'fresh', clock);
+		fresh.markDelivered('prior', 'solidtime');
+		fresh.markDelivered('today', 'solidtime');
+		fresh.compact(['solidtime']);
+
+		// The prior-date file is safe for ANY window to compact (it can never
+		// receive new appends), so its fully-delivered segment is dropped.
+		assert.ok(!fs.existsSync(path.join(dir, 'closed-window-2026-07-20.jsonl')));
+		// The other window's TODAY file is left untouched, even though its
+		// segment is also fully delivered — it could still be appended to.
+		assert.ok(fs.existsSync(path.join(dir, 'other-live-window-2026-07-21.jsonl')));
+		assert.deepEqual(
+			fresh.recover().map((s) => s.id),
+			['today']
+		);
 	});
 
 	test('compact tolerates a torn trailing line without throwing', () => {

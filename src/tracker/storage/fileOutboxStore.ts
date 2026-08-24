@@ -40,16 +40,16 @@ function reconstructSegments(
 			continue;
 		}
 		// A dangling open is only recoverable when staleness is not being
-		// filtered (now === undefined) or its last checkpoint is old enough that
-		// no live window could still own it. A fresh open belongs to a running
-		// window and would otherwise be delivered truncated at its checkpoint.
+		// filtered (now === undefined) or its last checkpoint write is old enough
+		// that no live window could still own it. A fresh checkpoint write means a
+		// running window is still there (even if it is only focused and reading,
+		// with no recent edits) and would otherwise be delivered truncated.
 		const isStale =
-			options?.now === undefined ||
-			options.now - Date.parse(checkpoint.lastActivity) >= STALE_OPEN_MS;
+			options?.now === undefined || options.now - Date.parse(checkpoint.at) >= STALE_OPEN_MS;
 		if (!isStale) {
 			continue;
 		}
-		const activeMilliseconds = Date.parse(checkpoint.lastActivity) - Date.parse(open.start);
+		const activeMilliseconds = Date.parse(checkpoint.at) - Date.parse(open.start);
 		// A dangling open never emitted a close, so it was never checked against
 		// the minimum-segment threshold. A sub-minimum reconstruction (e.g. an
 		// idle-close that dropped it) must not be resurrected and delivered.
@@ -60,7 +60,7 @@ function reconstructSegments(
 			id,
 			instanceId: open.instanceId,
 			start: open.start,
-			end: checkpoint.lastActivity,
+			end: checkpoint.at,
 			activeMilliseconds,
 			workspaceKey: open.context.workspaceKey,
 			projectName: open.context.projectName,
@@ -213,10 +213,21 @@ export class FileOutboxStore implements Store {
 	public compact(enabledIds: string[]): void {
 		const isSegmentFullyDelivered = (segmentId: string): boolean =>
 			this.isFullyDelivered(segmentId, enabledIds);
-		// Only rewrite files owned by this instance. Rewriting another live
+		// Rewrite files owned by this instance, plus any file dated before today.
+		// append() always targets today's file for the CURRENT instanceId, so a
+		// prior-date file — whichever instance wrote it — can never receive a new
+		// append and is safe for any window to compact. Rewriting another live
 		// window's file could clobber a record it appended between our read and
-		// write.
-		const ownFiles = this.journalFiles().filter((name) => name.startsWith(`${this.instanceId}-`));
+		// write, but that risk only exists for today's file of a still-running
+		// window.
+		const today = this.dateStamp();
+		const ownFiles = this.journalFiles().filter((name) => {
+			if (name.startsWith(`${this.instanceId}-`)) {
+				return true;
+			}
+			const fileDate = dateStampOf(name);
+			return fileDate !== undefined && fileDate < today;
+		});
 		for (const name of ownFiles) {
 			const full = path.join(this.directory, name);
 			const kept = fs
@@ -258,6 +269,12 @@ export class FileOutboxStore implements Store {
 		// support and represents a solidtime delivery.
 		return destinationId === 'solidtime' && fs.existsSync(path.join(this.deliveredDir, segmentId));
 	}
+}
+
+// The instanceId itself contains hyphens, so the date is only reliably
+// extracted by anchoring to the trailing `-YYYY-MM-DD.jsonl` shape.
+function dateStampOf(filename: string): string | undefined {
+	return /-(\d{4}-\d{2}-\d{2})\.jsonl$/.exec(filename)?.[1];
 }
 
 function segmentIdOf(line: string): string | undefined {

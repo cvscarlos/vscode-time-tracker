@@ -62,6 +62,16 @@ export class SessionStateMachine {
 		});
 	}
 
+	/**
+	 * The ms to credit if the open segment closed right now: focus-only reading
+	 * (no edits) is credited up to `now`, capped by the idle timeout past the
+	 * last activity — mirrors the cap tick() already applies on idle-close.
+	 * Only meaningful when `this.open` exists.
+	 */
+	private creditedEnd(now: number): number {
+		return Math.min(now, this.open!.lastActivity + this.options.idleTimeoutMs);
+	}
+
 	private finalize(end: number): void {
 		const open = this.open;
 		if (!open) {
@@ -88,12 +98,17 @@ export class SessionStateMachine {
 		this.options.sink.onClose(segment);
 	}
 
-	setContext(context: TrackingContext | undefined): void {
+	setContext(context: TrackingContext | undefined, now: number): void {
 		if (isSameContext(this.context, context)) {
 			return;
 		}
-		this.finalize(this.open ? this.open.lastActivity : 0);
+		this.finalize(this.open ? this.creditedEnd(now) : 0);
 		this.context = context;
+		// Reopen immediately under the new context if still trackable, so
+		// switching files/projects while focused doesn't wait for an editor event.
+		if (this.canTrack()) {
+			this.openSegment(now);
+		}
 	}
 
 	onFocus(isFocused: boolean, now: number): void {
@@ -140,22 +155,28 @@ export class SessionStateMachine {
 				type: 'checkpoint',
 				id: this.open.id,
 				lastActivity: iso(this.open.lastActivity),
+				at: iso(now),
 			});
 		}
 	}
 
 	pause(now: number): void {
-		this.finalize(this.open ? this.open.lastActivity : now);
+		this.finalize(this.open ? this.creditedEnd(now) : now);
 		this.paused = true;
 	}
 
-	resume(_now: number): void {
+	resume(now: number): void {
 		this.paused = false;
+		// Resuming while still focused restarts tracking immediately, without
+		// waiting for the next editor event.
+		if (!this.open && this.canTrack()) {
+			this.openSegment(now);
+		}
 	}
 
 	setEnabled(isEnabled: boolean, now: number): void {
 		if (!isEnabled) {
-			this.finalize(this.open ? this.open.lastActivity : now);
+			this.finalize(this.open ? this.creditedEnd(now) : now);
 		}
 		this.isEnabled = isEnabled;
 	}

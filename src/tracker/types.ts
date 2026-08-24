@@ -30,6 +30,11 @@ export interface CheckpointRecord {
 	type: 'checkpoint';
 	id: string;
 	lastActivity: string;
+	/** The checkpoint's write time — distinct from lastActivity, which tracks
+	 * the last edit/activity. Used by recovery as the freshness signal and the
+	 * recovered end, so a focused reading window (no edits, but alive) is not
+	 * misread as stale. */
+	at: string;
 }
 
 export interface CloseRecord {

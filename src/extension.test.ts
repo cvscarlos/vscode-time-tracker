@@ -54,6 +54,7 @@ suite('outbox integration', () => {
 			type: 'checkpoint',
 			id: 'b',
 			lastActivity: '2026-07-21T10:05:00.000Z',
+			at: '2026-07-21T10:05:00.000Z',
 		});
 		const ids = new FileOutboxStore(dir, 'fresh', clock)
 			.recover()
