@@ -31,8 +31,23 @@ suite('aggregate', () => {
 		);
 		assert.equal(blocks.length, 1);
 		assert.deepEqual(blocks[0].segmentIds, ['a', 'b']);
-		assert.equal(blocks[0].start, '2026-07-21T16:19:00.000Z'); // floored
-		assert.equal(blocks[0].end, '2026-07-21T16:22:00.000Z'); // ceiled
+		assert.equal(blocks[0].start, '2026-07-21T16:19:00.000Z'); // round(16:19:10)
+		assert.equal(blocks[0].end, '2026-07-21T16:22:00.000Z'); // round(16:21:40)
+	});
+
+	test('adjacent segments in different groups do not produce overlapping rounded blocks', () => {
+		// Abut at 07:44:10; floor/ceil overlapped them by a minute, round-nearest makes them touch.
+		const blocks = aggregate(
+			[
+				seg('a', '2026-07-21T07:42:30.000Z', '2026-07-21T07:44:10.000Z', 'main'),
+				seg('b', '2026-07-21T07:44:10.000Z', '2026-07-21T08:02:40.000Z', 'dev'),
+			],
+			opts
+		);
+		assert.equal(blocks.length, 2);
+		const a = blocks.find((x) => x.segmentIds[0] === 'a');
+		const b = blocks.find((x) => x.segmentIds[0] === 'b');
+		assert.ok(a && b && a.end <= b.start, `${a?.end} <= ${b?.start}`);
 	});
 
 	test('does not merge across a gap larger than mergeGapMs', () => {

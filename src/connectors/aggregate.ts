@@ -17,12 +17,10 @@ export interface AggregateOptions {
 
 const MINUTE_MS = 60_000;
 
-function floorMinute(ms: number): number {
-	return Math.floor(ms / MINUTE_MS) * MINUTE_MS;
-}
-
-function ceilMinute(ms: number): number {
-	return Math.ceil(ms / MINUTE_MS) * MINUTE_MS;
+// Round to nearest minute (not floor-start/ceil-end): raw segments never overlap and
+// rounding is monotonic, so adjacent entries meet at a minute instead of overlapping.
+function roundMinute(ms: number): number {
+	return Math.round(ms / MINUTE_MS) * MINUTE_MS;
 }
 
 function groupKey(segment: LocalSegment): string {
@@ -41,8 +39,8 @@ function buildBlock(
 	if (options.nowMs - lastEnd < options.settleMs) {
 		return undefined; // not settled yet — hold
 	}
-	const start = floorMinute(Date.parse(segments[0].start));
-	const end = ceilMinute(lastEnd);
+	const start = roundMinute(Date.parse(segments[0].start));
+	const end = roundMinute(lastEnd);
 	if (end - start < MINUTE_MS) {
 		return undefined; // rounds to less than a whole minute
 	}
