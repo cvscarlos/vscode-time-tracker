@@ -86,7 +86,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		if (solidtimeToken) {
 			const cfg = getSolidtimeConfig();
 			const connector = new SolidtimeConnector(cfg.apiUrl, solidtimeToken, cfg.organizationId);
-			destinations.push(new SolidtimeDestination(connector, mappings));
+			destinations.push(new SolidtimeDestination(connector, mappings, cfg.apiUrl));
 		}
 		const timetaggerToken = await getToken(context, 'timetagger');
 		if (timetaggerToken) {
@@ -115,7 +115,7 @@ export function activate(context: vscode.ExtensionContext): void {
 			if (!dest || !e.branch) {
 				continue;
 			}
-			const c = coveringCommit(e.endMs, e.branch, commits);
+			const c = coveringCommit(e.endMs, e.branch, e.workspaceKey, commits);
 			if (!c) {
 				continue;
 			}
@@ -161,6 +161,7 @@ export function activate(context: vscode.ExtensionContext): void {
 						markerId: block.segmentIds[0],
 						projectName: block.projectName,
 						branch: block.branch,
+						workspaceKey: block.workspaceKey,
 						startMs: Date.parse(block.start),
 						endMs: Date.parse(block.end),
 					});

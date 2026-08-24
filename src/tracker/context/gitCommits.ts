@@ -1,10 +1,12 @@
 import * as vscode from 'vscode';
+import { getGitInfo } from './gitProvider';
 
 export interface CommitInfo {
 	branch: string;
 	title: string;
 	timeMs: number;
 	hash: string;
+	workspaceKey: string;
 }
 
 interface GitCommit {
@@ -83,6 +85,8 @@ function watchRepository(
 	onCommit: (commit: CommitInfo) => void
 ): vscode.Disposable {
 	let lastSeenCommit = repository.state.HEAD?.commit;
+	const workspaceKey =
+		getGitInfo(repository.rootUri.fsPath).repositoryKey ?? repository.rootUri.toString();
 	return repository.state.onDidChange(() => {
 		const head = repository.state.HEAD;
 		const commit = head?.commit;
@@ -99,6 +103,7 @@ function watchRepository(
 					title: firstLine(gitCommit.message),
 					timeMs: (gitCommit.commitDate ?? new Date()).getTime(),
 					hash: gitCommit.hash,
+					workspaceKey,
 				});
 			})
 			.catch(() => {
@@ -127,6 +132,8 @@ export async function backfillCommits(maxPerRepo?: number): Promise<CommitInfo[]
 			if (!branch) {
 				continue;
 			}
+			const workspaceKey =
+				getGitInfo(repository.rootUri.fsPath).repositoryKey ?? repository.rootUri.toString();
 			const log = await repository.log({ maxEntries: maxPerRepo ?? 20 });
 			for (const gitCommit of log) {
 				commits.push({
@@ -134,6 +141,7 @@ export async function backfillCommits(maxPerRepo?: number): Promise<CommitInfo[]
 					title: firstLine(gitCommit.message),
 					timeMs: (gitCommit.commitDate ?? new Date()).getTime(),
 					hash: gitCommit.hash,
+					workspaceKey,
 				});
 			}
 		}

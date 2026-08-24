@@ -17,6 +17,7 @@ const base = {
 	markerId: 'seg-1',
 	projectName: 'proj',
 	branch: 'main',
+	workspaceKey: 'ws',
 	startMs: 0,
 	endMs: 60_000,
 };
@@ -43,11 +44,20 @@ suite('TitleStore per destination', () => {
 
 	test('coveringCommit picks the earliest commit at or after the entry end on the branch', () => {
 		const commits = [
-			{ branch: 'main', title: 'a', timeMs: 30_000, hash: 'h1' },
-			{ branch: 'main', title: 'b', timeMs: 90_000, hash: 'h2' },
-			{ branch: 'main', title: 'c', timeMs: 120_000, hash: 'h3' },
+			{ branch: 'main', title: 'a', timeMs: 30_000, hash: 'h1', workspaceKey: 'ws' },
+			{ branch: 'main', title: 'b', timeMs: 90_000, hash: 'h2', workspaceKey: 'ws' },
+			{ branch: 'main', title: 'c', timeMs: 120_000, hash: 'h3', workspaceKey: 'ws' },
 		];
-		assert.equal(coveringCommit(60_000, 'main', commits)?.hash, 'h2');
+		assert.equal(coveringCommit(60_000, 'main', 'ws', commits)?.hash, 'h2');
+	});
+
+	test('coveringCommit only matches commits from the same workspace (repository)', () => {
+		const commits = [
+			{ branch: 'main', title: 'repo A commit', timeMs: 90_000, hash: 'hA', workspaceKey: 'wsA' },
+			{ branch: 'main', title: 'repo B commit', timeMs: 90_000, hash: 'hB', workspaceKey: 'wsB' },
+		];
+		assert.equal(coveringCommit(60_000, 'main', 'wsA', commits)?.hash, 'hA');
+		assert.notEqual(coveringCommit(60_000, 'main', 'wsB', commits)?.hash, 'hA');
 	});
 
 	test('an old-shape entry (pre-destination globalState) is normalized on read', async () => {
@@ -70,8 +80,20 @@ suite('TitleStore per destination', () => {
 
 	test('addCommit dedups by hash (latest wins)', async () => {
 		const store = new TitleStore(memMemento());
-		await store.addCommit({ branch: 'main', title: 'first', timeMs: 100, hash: 'a' });
-		await store.addCommit({ branch: 'main', title: 'second', timeMs: 200, hash: 'a' });
+		await store.addCommit({
+			branch: 'main',
+			title: 'first',
+			timeMs: 100,
+			hash: 'a',
+			workspaceKey: 'ws',
+		});
+		await store.addCommit({
+			branch: 'main',
+			title: 'second',
+			timeMs: 200,
+			hash: 'a',
+			workspaceKey: 'ws',
+		});
 
 		const commits = store.commits();
 		assert.equal(commits.length, 1);
@@ -116,12 +138,14 @@ suite('TitleStore per destination', () => {
 			title: 'old',
 			timeMs: now - 3 * day,
 			hash: 'old-commit',
+			workspaceKey: 'ws',
 		});
 		await store.addCommit({
 			branch: 'main',
 			title: 'recent',
 			timeMs: now - 1 * day,
 			hash: 'recent-commit',
+			workspaceKey: 'ws',
 		});
 
 		await store.prune(now, maxAgeMs);

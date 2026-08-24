@@ -12,10 +12,16 @@ export class MappingStore {
 	setProjectId(workspaceKey: string, id: string): Thenable<void> {
 		return this.memento.update(`ntmap:project:${workspaceKey}`, id);
 	}
+	clearProjectId(workspaceKey: string): Thenable<void> {
+		return this.memento.update(`ntmap:project:${workspaceKey}`, undefined);
+	}
 	getTaskId(workspaceKey: string, branch: string): string | undefined {
 		return this.memento.get<string>(`ntmap:task:${workspaceKey}:${branch}`);
 	}
 	setTaskId(workspaceKey: string, branch: string, id: string): Thenable<void> {
 		return this.memento.update(`ntmap:task:${workspaceKey}:${branch}`, id);
+	}
+	clearTaskId(workspaceKey: string, branch: string): Thenable<void> {
+		return this.memento.update(`ntmap:task:${workspaceKey}:${branch}`, undefined);
 	}
 }

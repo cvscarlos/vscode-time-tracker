@@ -6,6 +6,7 @@ export interface DeliveredEntry {
 	markerId: string;
 	projectName: string;
 	branch?: string;
+	workspaceKey: string;
 	startMs: number;
 	endMs: number;
 	titled: boolean;
@@ -43,6 +44,7 @@ export class TitleStore {
 			markerId: String(e.markerId ?? ''),
 			projectName: '',
 			branch: e.branch as string | undefined,
+			workspaceKey: '',
 			startMs: 0,
 			endMs: Number(e.endMs ?? 0),
 			titled: Boolean(e.titled),
@@ -96,17 +98,25 @@ export class TitleStore {
 }
 
 /**
- * Among commits on `branch`, the earliest one at or after `entryEndMs` — the
- * commit that "closed" the entry's work — or `undefined` if none has landed yet.
+ * Among commits on `branch` in the same repository (`workspaceKey`), the
+ * earliest one at or after `entryEndMs` — the commit that "closed" the
+ * entry's work — or `undefined` if none has landed yet. Scoping by
+ * `workspaceKey` keeps two repositories on the same branch name (e.g. both on
+ * `main`) from retitling each other's entries.
  */
 export function coveringCommit(
 	entryEndMs: number,
 	branch: string,
+	workspaceKey: string,
 	commits: CommitInfo[]
 ): CommitInfo | undefined {
 	let best: CommitInfo | undefined;
 	for (const commit of commits) {
-		if (commit.branch !== branch || commit.timeMs < entryEndMs) {
+		if (
+			commit.branch !== branch ||
+			commit.workspaceKey !== workspaceKey ||
+			commit.timeMs < entryEndMs
+		) {
 			continue;
 		}
 		if (!best || commit.timeMs < best.timeMs) {

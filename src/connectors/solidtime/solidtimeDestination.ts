@@ -1,5 +1,5 @@
 import { DeliveryBlock, markerFor, TimeDestination, TitleCtx } from '../destination';
-import { EntryInput } from '../connector';
+import { ConnectorError, EntryInput } from '../connector';
 import { MappingStore } from '../mappingStore';
 
 export interface SolidtimeConnectorLike {
@@ -30,18 +30,30 @@ export class SolidtimeDestination implements TimeDestination {
 
 	constructor(
 		private readonly connector: SolidtimeConnectorLike,
-		private readonly mappings: MappingStore
+		private readonly mappings: MappingStore,
+		private readonly apiUrl: string
 	) {}
 
+	/**
+	 * Prefix a workspace key with the resolved server + organization so mapping
+	 * ids never leak across a `solidtime.apiUrl`/account/`organizationId` switch
+	 * — otherwise a deleted/stale id from the previous backend 404/422s forever.
+	 */
+	private scopedKey(workspaceKey: string): string {
+		const scope = `${this.apiUrl}#${this.organizationId}`;
+		return `${scope}:${workspaceKey}`;
+	}
+
 	private async resolveProject(workspaceKey: string, projectName: string): Promise<string> {
-		const cached = this.mappings.getProjectId(workspaceKey);
+		const scopedKey = this.scopedKey(workspaceKey);
+		const cached = this.mappings.getProjectId(scopedKey);
 		if (cached) {
 			return cached;
 		}
 		const found =
 			(await this.connector.findProjectByName(this.organizationId, projectName)) ??
 			(await this.connector.createProject(this.organizationId, projectName));
-		await this.mappings.setProjectId(workspaceKey, found);
+		await this.mappings.setProjectId(scopedKey, found);
 		return found;
 	}
 
@@ -54,14 +66,15 @@ export class SolidtimeDestination implements TimeDestination {
 			// eslint-disable-next-line unicorn/no-null -- EntryInput contract uses null for "no task"
 			return null;
 		}
-		const cached = this.mappings.getTaskId(workspaceKey, branch);
+		const scopedKey = this.scopedKey(workspaceKey);
+		const cached = this.mappings.getTaskId(scopedKey, branch);
 		if (cached) {
 			return cached;
 		}
 		const found =
 			(await this.connector.findTaskByName(this.organizationId, projectId, branch)) ??
 			(await this.connector.createTask(this.organizationId, projectId, branch));
-		await this.mappings.setTaskId(workspaceKey, branch, found);
+		await this.mappings.setTaskId(scopedKey, branch, found);
 		return found;
 	}
 
@@ -87,7 +100,20 @@ export class SolidtimeDestination implements TimeDestination {
 			taskId,
 			description: block.branch ?? block.projectName,
 		};
-		return this.connector.createEntry(this.organizationId, this.memberId, entry);
+		try {
+			return await this.connector.createEntry(this.organizationId, this.memberId, entry);
+		} catch (error) {
+			// A stale/deleted project or task id 404s or 422s forever otherwise —
+			// evict it so the next delivery attempt re-resolves (find-or-create).
+			if (error instanceof ConnectorError && (error.status === 404 || error.status === 422)) {
+				const scopedKey = this.scopedKey(block.workspaceKey);
+				await this.mappings.clearProjectId(scopedKey);
+				if (block.branch) {
+					await this.mappings.clearTaskId(scopedKey, block.branch);
+				}
+			}
+			throw error;
+		}
 	}
 
 	async retitle(ref: string, title: string, ctx: TitleCtx): Promise<void> {
