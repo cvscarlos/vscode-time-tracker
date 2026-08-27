@@ -1,4 +1,4 @@
-import { DeliveryBlock, TimeDestination, TitleCtx } from '../destination';
+import { breakdownSuffix, DeliveryBlock, TimeDestination, TitleCtx } from '../destination';
 import { TimetaggerClient } from './timetaggerClient';
 
 export function toTag(value: string): string {
@@ -25,6 +25,7 @@ export class TimetaggerDestination implements TimeDestination {
 
 	async deliver(block: DeliveryBlock): Promise<string> {
 		const key = block.segmentIds[0];
+		const text = `${block.branch ?? block.projectName}${breakdownSuffix(block.focusMinutes, block.idleMinutes)}`;
 		await this.client.putRecords([
 			{
 				key,
@@ -32,7 +33,7 @@ export class TimetaggerDestination implements TimeDestination {
 				t2: Math.ceil(Date.parse(block.end) / 1000),
 				mt: Math.floor(this.now() / 1000),
 				st: 0,
-				ds: describe(block.branch ?? block.projectName, block.projectName, block.branch),
+				ds: describe(text, block.projectName, block.branch),
 			},
 		]);
 		return key;
@@ -42,6 +43,7 @@ export class TimetaggerDestination implements TimeDestination {
 		if (ref === '') {
 			return;
 		}
+		const text = `${title}${breakdownSuffix(ctx.focusMinutes, ctx.idleMinutes)}`;
 		await this.client.putRecords([
 			{
 				key: ref,
@@ -49,7 +51,7 @@ export class TimetaggerDestination implements TimeDestination {
 				t2: Math.ceil(ctx.endMs / 1000),
 				mt: Math.floor(this.now() / 1000),
 				st: 0,
-				ds: describe(title, ctx.projectName, ctx.branch),
+				ds: describe(text, ctx.projectName, ctx.branch),
 			},
 		]);
 	}

@@ -17,6 +17,7 @@ function seg(id: string): LocalSegment {
 		start: '2026-07-21T09:00:00.000Z',
 		end: '2026-07-21T09:30:00.000Z',
 		activeMilliseconds: 1_800_000,
+		idleMilliseconds: 0,
 		workspaceKey: 'ws',
 		projectName: 'proj',
 		branch: 'main',

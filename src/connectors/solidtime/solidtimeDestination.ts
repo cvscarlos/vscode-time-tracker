@@ -1,4 +1,10 @@
-import { DeliveryBlock, markerFor, TimeDestination, TitleCtx } from '../destination';
+import {
+	breakdownSuffix,
+	DeliveryBlock,
+	markerFor,
+	TimeDestination,
+	TitleCtx,
+} from '../destination';
 import { ConnectorError, EntryInput } from '../connector';
 import { MappingStore } from '../mappingStore';
 
@@ -98,7 +104,7 @@ export class SolidtimeDestination implements TimeDestination {
 			end: block.end,
 			projectId,
 			taskId,
-			description: block.branch ?? block.projectName,
+			description: `${block.branch ?? block.projectName}${breakdownSuffix(block.focusMinutes, block.idleMinutes)}`,
 		};
 		try {
 			return await this.connector.createEntry(this.organizationId, this.memberId, entry);
@@ -123,7 +129,7 @@ export class SolidtimeDestination implements TimeDestination {
 		await this.connector.updateEntryDescription(
 			this.organizationId,
 			ref,
-			`${title} ${markerFor(ctx.markerId)}`
+			`${title}${breakdownSuffix(ctx.focusMinutes, ctx.idleMinutes)} ${markerFor(ctx.markerId)}`
 		);
 	}
 }

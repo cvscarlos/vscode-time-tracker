@@ -9,6 +9,8 @@ export interface DeliveredEntry {
 	workspaceKey: string;
 	startMs: number;
 	endMs: number;
+	focusMinutes: number;
+	idleMinutes: number;
 	titled: boolean;
 }
 
@@ -36,7 +38,12 @@ export class TitleStore {
 	private migrate(e: Record<string, unknown>): DeliveredEntry {
 		// Old shape: { entryId, branch, endMs, markerId, titled } (solidtime only).
 		if (typeof e.destination === 'string' && typeof e.ref === 'string') {
-			return e as unknown as DeliveredEntry;
+			return {
+				...(e as unknown as DeliveredEntry),
+				// Pre-breakdown records lack these — default to 0 (no idle credit known).
+				focusMinutes: Number(e.focusMinutes ?? 0),
+				idleMinutes: Number(e.idleMinutes ?? 0),
+			};
 		}
 		return {
 			destination: 'solidtime',
@@ -47,6 +54,8 @@ export class TitleStore {
 			workspaceKey: '',
 			startMs: 0,
 			endMs: Number(e.endMs ?? 0),
+			focusMinutes: 0,
+			idleMinutes: 0,
 			titled: Boolean(e.titled),
 		};
 	}

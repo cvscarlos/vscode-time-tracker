@@ -7,6 +7,8 @@ export interface DeliveryBlock {
 	workspaceKey: string;
 	projectName: string;
 	branch?: string;
+	focusMinutes: number;
+	idleMinutes: number;
 }
 
 export interface AggregateOptions {
@@ -61,6 +63,10 @@ function buildBlock(segments: LocalSegment[], options: AggregateOptions): BuildR
 		return { kind: 'discarded', segmentIds: segments.map((segment) => segment.id) };
 	}
 	const first = segments[0];
+	const idleMs = segments.reduce((sum, segment) => sum + (segment.idleMilliseconds ?? 0), 0);
+	const totalMinutes = (end - start) / MINUTE_MS;
+	const idleMinutes = Math.min(totalMinutes, Math.round(idleMs / MINUTE_MS));
+	const focusMinutes = totalMinutes - idleMinutes;
 	return {
 		kind: 'block',
 		block: {
@@ -70,6 +76,8 @@ function buildBlock(segments: LocalSegment[], options: AggregateOptions): BuildR
 			workspaceKey: first.workspaceKey,
 			projectName: first.projectName,
 			branch: first.branch,
+			focusMinutes,
+			idleMinutes,
 		},
 	};
 }

@@ -20,6 +20,8 @@ const block: DeliveryBlock = {
 	workspaceKey: 'ws',
 	projectName: 'my project',
 	branch: 'feature/x',
+	focusMinutes: 1,
+	idleMinutes: 0,
 };
 
 suite('toTag', () => {
@@ -55,6 +57,20 @@ suite('TimetaggerDestination', () => {
 		assert.equal(client.puts[0][0].ds, 'my project #my-project');
 	});
 
+	test('deliver appends the focus/idle breakdown suffix before the tags when idle >= 1 min', async () => {
+		const client = new FakeClient();
+		const dest = new TimetaggerDestination(client, () => 300_000);
+		await dest.deliver({ ...block, focusMinutes: 14, idleMinutes: 3 });
+		assert.equal(client.puts[0][0].ds, 'feature/x (14m focus, 3m idle) #my-project #feature/x');
+	});
+
+	test('deliver omits the suffix when idleMinutes is 0', async () => {
+		const client = new FakeClient();
+		const dest = new TimetaggerDestination(client, () => 300_000);
+		await dest.deliver(block);
+		assert.equal(client.puts[0][0].ds, 'feature/x #my-project #feature/x');
+	});
+
 	test('retitle re-PUTs the same key with the covering-commit title and bumped mt', async () => {
 		const client = new FakeClient();
 		const dest = new TimetaggerDestination(client, () => 999_000);
@@ -64,6 +80,8 @@ suite('TimetaggerDestination', () => {
 			branch: 'feature/x',
 			startMs: 120_000,
 			endMs: 180_000,
+			focusMinutes: 1,
+			idleMinutes: 0,
 		});
 		const rec = client.puts[0][0];
 		assert.equal(rec.key, 'seg-1');
@@ -71,5 +89,21 @@ suite('TimetaggerDestination', () => {
 		assert.equal(rec.t1, 120);
 		assert.equal(rec.t2, 180);
 		assert.equal(rec.ds, 'fix: blur tolerance #my-project #feature/x');
+	});
+
+	test('retitle appends the focus/idle breakdown suffix from ctx when idle >= 1 min', async () => {
+		const client = new FakeClient();
+		const dest = new TimetaggerDestination(client, () => 999_000);
+		await dest.retitle('seg-1', 'fix: blur tolerance', {
+			markerId: 'seg-1',
+			projectName: 'my project',
+			branch: 'feature/x',
+			startMs: 120_000,
+			endMs: 180_000,
+			focusMinutes: 14,
+			idleMinutes: 3,
+		});
+		const rec = client.puts[0][0];
+		assert.equal(rec.ds, 'fix: blur tolerance (14m focus, 3m idle) #my-project #feature/x');
 	});
 });

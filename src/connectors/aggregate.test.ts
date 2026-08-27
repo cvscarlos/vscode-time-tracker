@@ -5,13 +5,20 @@ import { LocalSegment } from '../tracker/types';
 const NOW = Date.parse('2026-07-21T17:00:00.000Z');
 const opts = { nowMs: NOW, settleMs: 5 * 60_000, mergeGapMs: 2 * 60_000 };
 
-function seg(id: string, startIso: string, endIso: string, branch = 'main'): LocalSegment {
+function seg(
+	id: string,
+	startIso: string,
+	endIso: string,
+	branch = 'main',
+	idleMilliseconds = 0
+): LocalSegment {
 	return {
 		id,
 		instanceId: 'w',
 		start: startIso,
 		end: endIso,
 		activeMilliseconds: Date.parse(endIso) - Date.parse(startIso),
+		idleMilliseconds,
 		workspaceKey: 'ws',
 		projectName: 'proj',
 		branch,
@@ -90,5 +97,28 @@ suite('aggregate', () => {
 		assert.equal(blocks.length, 0);
 		// Settled but sub-minute: safe to discard permanently rather than rescan forever.
 		assert.deepEqual(discarded, ['a']);
+	});
+
+	test('splits a rounded block into focus/idle minutes from the summed segment idle', () => {
+		// 5-minute block (both ends on a minute boundary, so rounding is exact)
+		// with 3 minutes of summed idle credit -> 2 focus, 3 idle.
+		const { blocks } = aggregate(
+			[seg('a', '2026-07-21T16:00:00.000Z', '2026-07-21T16:05:00.000Z', 'main', 3 * 60_000)],
+			opts
+		);
+		assert.equal(blocks.length, 1);
+		assert.equal(blocks[0].focusMinutes, 2);
+		assert.equal(blocks[0].idleMinutes, 3);
+		assert.equal(blocks[0].focusMinutes + blocks[0].idleMinutes, 5);
+	});
+
+	test('a block with no idle credit reports idleMinutes 0 and focusMinutes as the full duration', () => {
+		const { blocks } = aggregate(
+			[seg('a', '2026-07-21T16:00:00.000Z', '2026-07-21T16:05:00.000Z')],
+			opts
+		);
+		assert.equal(blocks.length, 1);
+		assert.equal(blocks[0].idleMinutes, 0);
+		assert.equal(blocks[0].focusMinutes, 5);
 	});
 });

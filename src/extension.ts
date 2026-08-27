@@ -126,6 +126,8 @@ export function activate(context: vscode.ExtensionContext): void {
 					branch: e.branch,
 					startMs: e.startMs,
 					endMs: e.endMs,
+					focusMinutes: e.focusMinutes,
+					idleMinutes: e.idleMinutes,
 				});
 				await titleStore.markTitled(e.destination, e.ref);
 				output.appendLine(`${dest.label} titled ${e.ref} -> ${c.title}`);
@@ -164,6 +166,8 @@ export function activate(context: vscode.ExtensionContext): void {
 						workspaceKey: block.workspaceKey,
 						startMs: Date.parse(block.start),
 						endMs: Date.parse(block.end),
+						focusMinutes: block.focusMinutes,
+						idleMinutes: block.idleMinutes,
 					});
 				}
 			},
@@ -223,9 +227,12 @@ export function activate(context: vscode.ExtensionContext): void {
 
 	const refreshContext = () => machine?.setContext(resolveContext(), Date.now());
 	const syncStatus = () => {
-		if (machine) {
-			statusBar.setState(machine.currentStatus(Date.now()));
+		if (!machine) {
+			return;
 		}
+		const now = Date.now();
+		const idleMinutes = Math.round((machine.idleMillis(now) ?? 0) / 60_000);
+		statusBar.setState(machine.currentStatus(now), idleMinutes);
 	};
 	context.subscriptions.push(
 		watchFocus((isFocused, now) => {

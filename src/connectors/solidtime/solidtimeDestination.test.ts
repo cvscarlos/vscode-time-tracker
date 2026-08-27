@@ -64,6 +64,8 @@ const block: DeliveryBlock = {
 	workspaceKey: 'ws',
 	projectName: 'proj',
 	branch: 'main',
+	focusMinutes: 1,
+	idleMinutes: 0,
 };
 
 suite('SolidtimeDestination', () => {
@@ -80,6 +82,20 @@ suite('SolidtimeDestination', () => {
 		assert.equal(connector.entries.length, 1);
 		assert.equal(connector.entries[0].projectId, 'proj-id');
 		assert.equal(connector.entries[0].taskId, 'task-id');
+		// No idle credit on this block — description stays clean, no suffix.
+		assert.equal(connector.entries[0].description, 'main');
+	});
+
+	test('deliver appends the focus/idle breakdown suffix to the description when idle >= 1 min', async () => {
+		const connector = new FakeConnector();
+		const dest = new SolidtimeDestination(
+			connector,
+			new MappingStore(memMemento()),
+			'https://app.solidtime.io'
+		);
+		await dest.prepare(block.start);
+		await dest.deliver({ ...block, focusMinutes: 14, idleMinutes: 3 });
+		assert.equal(connector.entries[0].description, 'main (14m focus, 3m idle)');
 	});
 
 	test('deliver skips and returns "" when the marker is already present', async () => {
@@ -110,8 +126,32 @@ suite('SolidtimeDestination', () => {
 			branch: 'main',
 			startMs: 0,
 			endMs: 60_000,
+			focusMinutes: 1,
+			idleMinutes: 0,
 		});
 		assert.deepEqual(connector.updated, [{ id: 'entry-1', description: 'fix: thing [vsc:seg-1]' }]);
+	});
+
+	test('retitle appends the focus/idle breakdown suffix before the marker when idle >= 1 min', async () => {
+		const connector = new FakeConnector();
+		const dest = new SolidtimeDestination(
+			connector,
+			new MappingStore(memMemento()),
+			'https://app.solidtime.io'
+		);
+		await dest.prepare(block.start);
+		await dest.retitle('entry-1', 'fix: blur tolerance', {
+			markerId: 'seg-1',
+			projectName: 'proj',
+			branch: 'main',
+			startMs: 0,
+			endMs: 60_000,
+			focusMinutes: 14,
+			idleMinutes: 3,
+		});
+		assert.deepEqual(connector.updated, [
+			{ id: 'entry-1', description: 'fix: blur tolerance (14m focus, 3m idle) [vsc:seg-1]' },
+		]);
 	});
 
 	test('retitle is a no-op for an empty ref', async () => {
@@ -122,7 +162,14 @@ suite('SolidtimeDestination', () => {
 			'https://app.solidtime.io'
 		);
 		await dest.prepare(block.start);
-		await dest.retitle('', 'x', { markerId: 'seg-1', projectName: 'proj', startMs: 0, endMs: 1 });
+		await dest.retitle('', 'x', {
+			markerId: 'seg-1',
+			projectName: 'proj',
+			startMs: 0,
+			endMs: 1,
+			focusMinutes: 0,
+			idleMinutes: 0,
+		});
 		assert.equal(connector.updated.length, 0);
 	});
 

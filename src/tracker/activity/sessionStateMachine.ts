@@ -83,12 +83,14 @@ export class SessionStateMachine {
 		if (activeMilliseconds < this.options.minimumSegmentMs) {
 			return;
 		}
+		const idleMilliseconds = Math.max(0, boundedEnd - Math.max(open.lastActivity, open.start));
 		const segment: LocalSegment = {
 			id: open.id,
 			instanceId: this.options.instanceId,
 			start: iso(open.start),
 			end: iso(boundedEnd),
 			activeMilliseconds,
+			idleMilliseconds,
 			workspaceKey: open.context.workspaceKey,
 			projectName: open.context.projectName,
 			repositoryKey: open.context.repositoryKey,

@@ -12,6 +12,7 @@ function seg(id: string, startMs: number, endMs: number): LocalSegment {
 		start: new Date(startMs).toISOString(),
 		end: new Date(endMs).toISOString(),
 		activeMilliseconds: endMs - startMs,
+		idleMilliseconds: 0,
 		workspaceKey: 'ws',
 		projectName: 'proj',
 		branch: 'main',

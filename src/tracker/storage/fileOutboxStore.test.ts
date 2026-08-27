@@ -21,6 +21,7 @@ function closeRecord(id: string): JournalRecord {
 			start: new Date(0).toISOString(),
 			end: new Date(60_000).toISOString(),
 			activeMilliseconds: 60_000,
+			idleMilliseconds: 0,
 			workspaceKey: 'ws',
 			projectName: 'proj',
 			branch: 'main',
@@ -36,6 +37,7 @@ function seg(id: string, ms: number): LocalSegment {
 		start: '2026-07-21T09:00:00.000Z',
 		end: '2026-07-21T09:30:00.000Z',
 		activeMilliseconds: ms,
+		idleMilliseconds: 0,
 		workspaceKey: 'ws',
 		projectName: 'proj',
 		branch: 'main',
@@ -139,6 +141,8 @@ suite('FileOutboxStore', () => {
 		const recovered = new FileOutboxStore(crashedDir, 'fresh', clock).recover();
 		assert.equal(recovered.length, 1);
 		assert.equal(recovered[0].end, '2026-07-21T09:55:00.000Z');
+		// Idle tail = checkpoint write time minus last activity (09:55 - 09:40).
+		assert.equal(recovered[0].idleMilliseconds, 900_000);
 	});
 
 	test('a dangling open with no checkpoint is dropped', () => {

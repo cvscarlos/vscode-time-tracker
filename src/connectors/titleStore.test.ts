@@ -20,6 +20,8 @@ const base = {
 	workspaceKey: 'ws',
 	startMs: 0,
 	endMs: 60_000,
+	focusMinutes: 1,
+	idleMinutes: 0,
 };
 
 suite('TitleStore per destination', () => {
@@ -73,6 +75,8 @@ suite('TitleStore per destination', () => {
 		assert.equal(untitled[0].ref, 'entry-9');
 		assert.equal(untitled[0].endMs, 60_000);
 		assert.equal(untitled[0].markerId, 'seg-9');
+		assert.equal(untitled[0].focusMinutes, 0);
+		assert.equal(untitled[0].idleMinutes, 0);
 
 		await store.markTitled('solidtime', 'entry-9');
 		assert.equal(store.untitled().length, 0);

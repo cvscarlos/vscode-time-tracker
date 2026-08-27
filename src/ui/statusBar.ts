@@ -14,15 +14,26 @@ const ICONS: Record<StateKind, string> = {
 };
 
 export class StatusBar {
-	private readonly item: vscode.StatusBarItem;
+	// Persistent: always shows the current tracking state; clicking opens the log.
+	private readonly statusItem: vscode.StatusBarItem;
+	// Action: shown ONLY when there is something to act on (idle time to discard),
+	// so the status message is never overloaded with a click-action.
+	private readonly actionItem: vscode.StatusBarItem;
 	private kind: StateKind = 'idle';
 	private pending = 0;
 	private syncError = false;
 
 	constructor() {
-		this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 3);
-		this.item.command = 'ntTimeTracker.showOutput';
-		this.item.show();
+		this.statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 3);
+		this.statusItem.command = 'ntTimeTracker.showOutput';
+		this.statusItem.tooltip = 'Time Tracker nt — click for the log';
+		this.statusItem.show();
+
+		this.actionItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 2);
+		this.actionItem.command = 'ntTimeTracker.discardIdle';
+		this.actionItem.tooltip = 'Discard this idle time (your active work is kept)';
+		// hidden until there is idle time to discard
+
 		this.render();
 	}
 
@@ -34,19 +45,18 @@ export class StatusBar {
 		if (this.syncError) {
 			parts.push('$(warning)');
 		}
-		this.item.text = parts.join(' · ');
-		this.item.tooltip =
-			this.kind === 'tracking-idle'
-				? "You've gone idle — click to discard this idle time (your active work is kept)"
-				: 'Time Tracker nt — click for the log';
+		this.statusItem.text = parts.join(' · ');
 	}
 
-	setState(kind: StateKind): void {
+	setState(kind: StateKind, idleMinutes = 0): void {
 		this.kind = kind;
-		// While idle-but-still-counting, a click discards the idle time; otherwise
-		// it opens the log.
-		this.item.command =
-			kind === 'tracking-idle' ? 'ntTimeTracker.discardIdle' : 'ntTimeTracker.showOutput';
+		if (kind === 'tracking-idle') {
+			this.actionItem.text =
+				idleMinutes > 0 ? `$(discard) discard ${idleMinutes}m idle` : '$(discard) discard idle';
+			this.actionItem.show();
+		} else {
+			this.actionItem.hide();
+		}
 		this.render();
 	}
 
@@ -61,6 +71,7 @@ export class StatusBar {
 	}
 
 	dispose(): void {
-		this.item.dispose();
+		this.statusItem.dispose();
+		this.actionItem.dispose();
 	}
 }

@@ -56,12 +56,20 @@ function reconstructSegments(
 		if (activeMilliseconds < minActiveMs) {
 			continue;
 		}
+		// Idle tail = last-checkpoint-write minus last-activity: the checkpoint's
+		// `at` stands in for the (unknown) recovered end, mirroring the state
+		// machine's own idle-credit accounting.
+		const idleMilliseconds = Math.max(
+			0,
+			Date.parse(checkpoint.at) - Date.parse(checkpoint.lastActivity)
+		);
 		segments.push({
 			id,
 			instanceId: open.instanceId,
 			start: open.start,
 			end: checkpoint.at,
 			activeMilliseconds,
+			idleMilliseconds,
 			workspaceKey: open.context.workspaceKey,
 			projectName: open.context.projectName,
 			repositoryKey: open.context.repositoryKey,

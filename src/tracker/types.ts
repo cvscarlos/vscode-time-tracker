@@ -11,6 +11,9 @@ export interface LocalSegment {
 	start: string;
 	end: string;
 	activeMilliseconds: number;
+	/** The idle-credit tail: end - lastActivity. Time within activeMilliseconds
+	 * that was credited via the idle cap rather than real activity. */
+	idleMilliseconds: number;
 	workspaceKey: string;
 	projectName: string;
 	repositoryKey?: string;

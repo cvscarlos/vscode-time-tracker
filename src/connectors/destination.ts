@@ -1,7 +1,7 @@
 import { DeliveryBlock } from './aggregate';
 
 export { DeliveryBlock } from './aggregate';
-export { markerFor } from './connector';
+export { breakdownSuffix, markerFor } from './connector';
 
 export interface TitleCtx {
 	markerId: string;
@@ -9,6 +9,8 @@ export interface TitleCtx {
 	branch?: string;
 	startMs: number;
 	endMs: number;
+	focusMinutes: number;
+	idleMinutes: number;
 }
 
 export interface TimeDestination {
