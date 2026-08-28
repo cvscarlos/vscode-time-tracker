@@ -141,8 +141,8 @@ suite('FileOutboxStore', () => {
 		const recovered = new FileOutboxStore(crashedDir, 'fresh', clock).recover();
 		assert.equal(recovered.length, 1);
 		assert.equal(recovered[0].end, '2026-07-21T09:55:00.000Z');
-		// Idle tail = checkpoint write time minus last activity (09:55 - 09:40).
-		assert.equal(recovered[0].idleMilliseconds, 900_000);
+		// A crash is not a cap-close, so recovered time is credited as focus (idle 0).
+		assert.equal(recovered[0].idleMilliseconds, 0);
 	});
 
 	test('a dangling open with no checkpoint is dropped', () => {

@@ -72,7 +72,7 @@ export class SessionStateMachine {
 		return Math.min(now, this.open!.lastActivity + this.options.idleTimeoutMs);
 	}
 
-	private finalize(end: number): void {
+	private finalize(end: number, idleMs = 0): void {
 		const open = this.open;
 		if (!open) {
 			return;
@@ -83,7 +83,11 @@ export class SessionStateMachine {
 		if (activeMilliseconds < this.options.minimumSegmentMs) {
 			return;
 		}
-		const idleMilliseconds = Math.max(0, boundedEnd - Math.max(open.lastActivity, open.start));
+		// Idle credit is ONLY the grace banked when tick() closed the segment on the
+		// inactivity cap. A segment closed by a real transition (blur, context switch,
+		// pause) was focused work — including terminal typing or reading with no editor
+		// events — so it carries no idle. Clamped to the span.
+		const idleMilliseconds = Math.max(0, Math.min(idleMs, activeMilliseconds));
 		const segment: LocalSegment = {
 			id: open.id,
 			instanceId: this.options.instanceId,
@@ -148,7 +152,11 @@ export class SessionStateMachine {
 			// Credit up to the idle cap past the last activity, then stop: a focused
 			// reading/analysis session (no editor events) still counts, but only up
 			// to idleTimeoutMs — an abandoned-but-focused window can't bank forever.
-			this.finalize(this.open.lastActivity + this.options.idleTimeoutMs);
+			// That grace (the tail past the last activity) is the segment's idle credit.
+			this.finalize(
+				this.open.lastActivity + this.options.idleTimeoutMs,
+				this.options.idleTimeoutMs
+			);
 			return;
 		}
 		if (now - this.open.lastCheckpointAt >= this.options.checkpointIntervalMs) {

@@ -85,6 +85,8 @@ suite('SessionStateMachine', () => {
 		// Ends at last activity + idle cap (25_000 + 120_000), not at last activity.
 		assert.equal(sink.closes[0].end, iso(145_000));
 		assert.equal(sink.closes[0].activeMilliseconds, 145_000);
+		// A cap-close banks the grace (the tail past the last activity) as idle credit.
+		assert.equal(sink.closes[0].idleMilliseconds, 120_000);
 	});
 
 	test('pause during focus-only reading credits up to now, not the stale lastActivity', () => {
@@ -98,6 +100,8 @@ suite('SessionStateMachine', () => {
 		// lastActivity), not the stale lastActivity=0 the old code used.
 		assert.equal(sink.closes[0].end, iso(90_000));
 		assert.equal(sink.closes[0].activeMilliseconds, 90_000);
+		// Pause is a transition, not a cap-close — the reading counts as focus, no idle.
+		assert.equal(sink.closes[0].idleMilliseconds, 0);
 	});
 
 	test('a focused but inactive window still counts up to the idle cap, then resumes on activity', () => {

@@ -56,13 +56,10 @@ function reconstructSegments(
 		if (activeMilliseconds < minActiveMs) {
 			continue;
 		}
-		// Idle tail = last-checkpoint-write minus last-activity: the checkpoint's
-		// `at` stands in for the (unknown) recovered end, mirroring the state
-		// machine's own idle-credit accounting.
-		const idleMilliseconds = Math.max(
-			0,
-			Date.parse(checkpoint.at) - Date.parse(checkpoint.lastActivity)
-		);
+		// A recovered dangling open was never closed by the inactivity cap (its window
+		// crashed), so its credited time counts as focus, not idle — matching the
+		// state machine, where only a cap-close banks idle credit.
+		const idleMilliseconds = 0;
 		segments.push({
 			id,
 			instanceId: open.instanceId,
