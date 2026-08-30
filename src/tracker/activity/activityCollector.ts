@@ -20,16 +20,16 @@ export function watchActivity(
 		vscode.window.onDidChangeActiveTextEditor(fire),
 		vscode.tasks.onDidStartTask(fire),
 		vscode.debug.onDidChangeActiveDebugSession(fire),
+		// Terminal work counts too. VS Code exposes no per-keystroke (or "terminal
+		// focused") event, but these cover switching into or opening a terminal,
+		// first interacting with it, and running commands — so most terminal use
+		// keeps tracking alive even with no editor edits.
+		vscode.window.onDidChangeActiveTerminal(fire),
+		vscode.window.onDidOpenTerminal(fire),
+		vscode.window.onDidChangeTerminalState(fire),
+		vscode.window.onDidStartTerminalShellExecution(fire),
+		vscode.window.onDidEndTerminalShellExecution(fire),
 	];
-
-	const terminalApi = vscode.window as unknown as {
-		onDidStartTerminalShellExecution?: (listener: () => void) => vscode.Disposable;
-	};
-	if (typeof terminalApi.onDidStartTerminalShellExecution === 'function') {
-		disposables.push(terminalApi.onDidStartTerminalShellExecution(fire));
-	} else {
-		disposables.push(vscode.window.onDidChangeActiveTerminal(fire));
-	}
 
 	return vscode.Disposable.from(...disposables);
 }
