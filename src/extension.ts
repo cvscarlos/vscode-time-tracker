@@ -247,13 +247,22 @@ export function activate(context: vscode.ExtensionContext): void {
 		vscode.workspace.onDidChangeWorkspaceFolders(refreshContext),
 		watchGitContext(refreshContext),
 		vscode.workspace.onDidChangeConfiguration((e) => {
-			if (!e.affectsConfiguration('ntTimeTracker.enabled')) {
+			if (!e.affectsConfiguration('ntTimeTracker')) {
 				return;
 			}
-			machine?.setEnabled(
-				vscode.workspace.getConfiguration('ntTimeTracker').get<boolean>('enabled', true),
-				Date.now()
-			);
+			const cfg = vscode.workspace.getConfiguration('ntTimeTracker');
+			if (e.affectsConfiguration('ntTimeTracker.enabled')) {
+				machine?.setEnabled(cfg.get<boolean>('enabled', true), Date.now());
+			}
+			if (
+				e.affectsConfiguration('ntTimeTracker.tracking.idleTimeoutSeconds') ||
+				e.affectsConfiguration('ntTimeTracker.tracking.focusLossToleranceSeconds')
+			) {
+				machine?.reconfigure(
+					cfg.get<number>('tracking.idleTimeoutSeconds', 300) * 1000,
+					cfg.get<number>('tracking.focusLossToleranceSeconds', 30) * 1000
+				);
+			}
 			syncStatus();
 		})
 	);

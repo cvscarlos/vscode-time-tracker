@@ -127,6 +127,17 @@ suite('SessionStateMachine', () => {
 		assert.equal(sink.closes[0].idleMilliseconds, 0);
 	});
 
+	test('reconfigure applies a new idle timeout live — 0 disables the cap without a restart', () => {
+		const sink = new RecordingSink();
+		const m = make(sink); // starts with idleTimeoutMs 120_000
+		m.setContext(ctx, 0);
+		m.onFocus(true, 0);
+		m.reconfigure(0, 25_000); // disable the cap live, as a settings change would
+		m.tick(10 * 60_000);
+		assert.equal(sink.closes.length, 0); // no idle-close after the live change
+		assert.equal(m.currentStatus(10 * 60_000), 'tracking');
+	});
+
 	test('a focused but inactive window still counts up to the idle cap, then resumes on activity', () => {
 		const sink = new RecordingSink();
 		const m = make(sink);

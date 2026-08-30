@@ -200,6 +200,12 @@ export class SessionStateMachine {
 		this.isEnabled = isEnabled;
 	}
 
+	/** Apply changed tracking timeouts live, without a restart. */
+	reconfigure(idleTimeoutMs: number, focusLossToleranceMs: number): void {
+		this.options.idleTimeoutMs = idleTimeoutMs;
+		this.options.focusLossToleranceMs = focusLossToleranceMs;
+	}
+
 	shutdown(now: number): void {
 		const end = this.blurAt ?? now;
 		this.finalize(end);
