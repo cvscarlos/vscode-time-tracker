@@ -73,7 +73,7 @@
 				"ntTimeTracker.tracking.idleTimeoutSeconds": {
 					"type": "number",
 					"default": 300,
-					"description": "Safety cap: seconds a focused window keeps counting with no editor activity before tracking stops. Reading or reviewing (with no edits) still counts up to this cap; beyond it a focused-but-idle window stops. Any activity resumes tracking. Default 300 (5 min), matching tools like Clockify and Paymo."
+					"description": "Safety cap: seconds a focused window keeps counting with no editor activity before tracking stops. Reading or reviewing (with no edits) still counts up to this cap; beyond it a focused-but-idle window stops. Any activity resumes tracking. Default 300 (5 min), matching tools like Clockify and Paymo. Set 0 to disable the cap and track continuously while the window is focused — useful for long interactive CLI/agent sessions (e.g. Claude Code) the editor sees no activity in."
 				},
 				"ntTimeTracker.tracking.focusLossToleranceSeconds": {
 					"type": "number",

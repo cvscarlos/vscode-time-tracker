@@ -104,6 +104,29 @@ suite('SessionStateMachine', () => {
 		assert.equal(sink.closes[0].idleMilliseconds, 0);
 	});
 
+	test('idleTimeoutMs 0 disables the cap: a focused window never idle-closes and stays tracking', () => {
+		const sink = new RecordingSink();
+		const m = new SessionStateMachine({
+			instanceId: 'inst',
+			idleTimeoutMs: 0, // cap disabled — track continuously while focused
+			focusLossToleranceMs: 25_000,
+			idleHintMs: 60_000,
+			minimumSegmentMs: 20_000,
+			checkpointIntervalMs: 30_000,
+			sink,
+			generateId: () => 'seg-1',
+		});
+		m.setContext(ctx, 0);
+		m.onFocus(true, 0); // opens, no further activity (e.g. a long CLI session)
+		m.tick(10 * 60_000); // 10 min later, still no editor/terminal events
+		assert.equal(sink.closes.length, 0); // never idle-closed
+		assert.equal(m.currentStatus(10 * 60_000), 'tracking'); // and not 'tracking-idle'
+		m.pause(10 * 60_000); // a transition credits all focused time up to now
+		assert.equal(sink.closes.length, 1);
+		assert.equal(sink.closes[0].end, iso(10 * 60_000));
+		assert.equal(sink.closes[0].idleMilliseconds, 0);
+	});
+
 	test('a focused but inactive window still counts up to the idle cap, then resumes on activity', () => {
 		const sink = new RecordingSink();
 		const m = make(sink);

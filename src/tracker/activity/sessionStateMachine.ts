@@ -69,6 +69,10 @@ export class SessionStateMachine {
 	 * Only meaningful when `this.open` exists.
 	 */
 	private creditedEnd(now: number): number {
+		// Cap disabled (idleTimeoutMs <= 0): credit all focused time up to now.
+		if (this.options.idleTimeoutMs <= 0) {
+			return now;
+		}
 		return Math.min(now, this.open!.lastActivity + this.options.idleTimeoutMs);
 	}
 
@@ -148,7 +152,12 @@ export class SessionStateMachine {
 		if (!this.open) {
 			return;
 		}
-		if (now - this.open.lastActivity >= this.options.idleTimeoutMs) {
+		// idleTimeoutMs <= 0 disables the cap: track continuously while focused (for
+		// long interactive CLI/agent sessions the editor can't see any activity in).
+		if (
+			this.options.idleTimeoutMs > 0 &&
+			now - this.open.lastActivity >= this.options.idleTimeoutMs
+		) {
 			// Credit up to the idle cap past the last activity, then stop: a focused
 			// reading/analysis session (no editor events) still counts, but only up
 			// to idleTimeoutMs — an abandoned-but-focused window can't bank forever.
@@ -212,8 +221,11 @@ export class SessionStateMachine {
 		}
 		if (this.open) {
 			// Still counting toward the idle cap, but quiet for a while — surface it
-			// so the user knows they have gone idle and tracking will stop soon.
-			return now - this.open.lastActivity >= this.options.idleHintMs ? 'tracking-idle' : 'tracking';
+			// so the user knows they have gone idle and tracking will stop soon. With
+			// the cap disabled tracking never stops, so the hint would mislead.
+			const isIdleHint =
+				this.options.idleTimeoutMs > 0 && now - this.open.lastActivity >= this.options.idleHintMs;
+			return isIdleHint ? 'tracking-idle' : 'tracking';
 		}
 		if (!this.focused) {
 			return 'unfocused';
