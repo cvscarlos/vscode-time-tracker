@@ -2,7 +2,8 @@ import * as vscode from 'vscode';
 
 export function watchActivity(
 	onActivity: (now: number) => void,
-	debounceMs = 1000
+	debounceMs = 1000,
+	pollMs = 5000
 ): vscode.Disposable {
 	let last = 0;
 	const fire = () => {
@@ -31,7 +32,21 @@ export function watchActivity(
 		vscode.window.onDidChangeTerminalState(fire),
 		vscode.window.onDidStartTerminalShellExecution(fire),
 		vscode.window.onDidEndTerminalShellExecution(fire),
+		// Any mouse/keyboard input in the window, including views that raise no
+		// extension events (e.g. the embedded browser). VS Code turns `active` off a
+		// few seconds after input stops, so polling it only sees real interaction.
+		vscode.window.onDidChangeWindowState((state) => {
+			if (state.active) {
+				fire();
+			}
+		}),
 	];
+	const poll = setInterval(() => {
+		if (vscode.window.state.active) {
+			fire();
+		}
+	}, pollMs);
+	disposables.push({ dispose: () => clearInterval(poll) });
 
 	return vscode.Disposable.from(...disposables);
 }
