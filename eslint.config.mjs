@@ -5,7 +5,6 @@ import eslintPluginUnicorn from 'eslint-plugin-unicorn';
 
 export default [
 	{ files: ['**/*.ts'] },
-	// If this import shape errors, use eslintPluginUnicorn.configs['flat/recommended'].
 	eslintPluginUnicorn.configs.recommended,
 	{
 		plugins: {
@@ -29,6 +28,9 @@ export default [
 			// Opinionated abbreviation dictionary (v72): would rename the domain field
 			// repositoryKey->repoKey and dir/tmp/ref across the codebase for style only.
 			'unicorn/name-replacements': 'off',
+			// v77 rewrite standard JSDoc (`/** x */` -> 3 lines, `*` prefixes stripped) for style only.
+			'unicorn/no-asterisk-prefix-in-documentation-comments': 'off',
+			'unicorn/single-line-block-comment-style': 'off',
 			'unicorn/filename-case': ['warn', { case: 'camelCase' }],
 		},
 	},

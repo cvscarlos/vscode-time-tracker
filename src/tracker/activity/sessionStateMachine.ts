@@ -70,10 +70,9 @@ export class SessionStateMachine {
 	 */
 	private creditedEnd(now: number): number {
 		// Cap disabled (idleTimeoutMs <= 0): credit all focused time up to now.
-		if (this.options.idleTimeoutMs <= 0) {
-			return now;
-		}
-		return Math.min(now, this.open!.lastActivity + this.options.idleTimeoutMs);
+		return this.options.idleTimeoutMs <= 0
+			? now
+			: Math.min(now, this.open!.lastActivity + this.options.idleTimeoutMs);
 	}
 
 	private finalize(end: number, idleMs = 0): void {
@@ -168,15 +167,17 @@ export class SessionStateMachine {
 			);
 			return;
 		}
-		if (now - this.open.lastCheckpointAt >= this.options.checkpointIntervalMs) {
-			this.open.lastCheckpointAt = now;
-			this.options.sink.onCheckpoint({
-				type: 'checkpoint',
-				id: this.open.id,
-				lastActivity: iso(this.open.lastActivity),
-				at: iso(now),
-			});
+		if (now - this.open.lastCheckpointAt < this.options.checkpointIntervalMs) {
+			return;
 		}
+
+		this.open.lastCheckpointAt = now;
+		this.options.sink.onCheckpoint({
+			type: 'checkpoint',
+			id: this.open.id,
+			lastActivity: iso(this.open.lastActivity),
+			at: iso(now),
+		});
 	}
 
 	pause(now: number): void {
@@ -233,10 +234,7 @@ export class SessionStateMachine {
 				this.options.idleTimeoutMs > 0 && now - this.open.lastActivity >= this.options.idleHintMs;
 			return isIdleHint ? 'tracking-idle' : 'tracking';
 		}
-		if (!this.focused) {
-			return 'unfocused';
-		}
-		return 'idle';
+		return this.focused ? 'idle' : 'unfocused';
 	}
 
 	/** Milliseconds since the open segment's last activity, or undefined if none is open. */
@@ -257,16 +255,13 @@ export class SessionStateMachine {
 }
 
 function isSameContext(a: TrackingContext | undefined, b: TrackingContext | undefined): boolean {
-	if (a === b) {
-		return true;
-	}
-	if (!a || !b) {
-		return false;
-	}
 	return (
-		a.workspaceKey === b.workspaceKey &&
-		a.projectName === b.projectName &&
-		a.repositoryKey === b.repositoryKey &&
-		a.branch === b.branch
+		a === b ||
+		(a !== undefined &&
+			b !== undefined &&
+			a.workspaceKey === b.workspaceKey &&
+			a.projectName === b.projectName &&
+			a.repositoryKey === b.repositoryKey &&
+			a.branch === b.branch)
 	);
 }

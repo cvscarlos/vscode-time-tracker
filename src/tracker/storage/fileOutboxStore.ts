@@ -116,10 +116,7 @@ export class FileOutboxStore implements Store {
 			const content = fs.readFileSync(file, 'utf8');
 			const [instanceId, timestamp] = content.split(' ', 2);
 			const claimedAtMs = Date.parse(timestamp);
-			if (!instanceId || Number.isNaN(claimedAtMs)) {
-				return undefined;
-			}
-			return { instanceId, claimedAtMs };
+			return !instanceId || Number.isNaN(claimedAtMs) ? undefined : { instanceId, claimedAtMs };
 		} catch {
 			return undefined;
 		}

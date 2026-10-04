@@ -50,10 +50,12 @@ async function promptForToken(
 		value: existing ? '' : undefined,
 		placeHolder: existing ? '(a token is already set — type to replace)' : undefined,
 	});
-	if (token && token.trim() !== '') {
-		await setToken(context, backend, token.trim());
-		vscode.window.showInformationMessage(`${title.replace(' Token', '')} saved.`);
+	if (!token || token.trim() === '') {
+		return;
 	}
+
+	await setToken(context, backend, token.trim());
+	vscode.window.showInformationMessage(`${title.replace(' Token', '')} saved.`);
 }
 
 export function activate(context: vscode.ExtensionContext): void {

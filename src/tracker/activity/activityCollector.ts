@@ -7,10 +7,12 @@ export function watchActivity(
 	let last = 0;
 	const fire = () => {
 		const now = Date.now();
-		if (now - last >= debounceMs) {
-			last = now;
-			onActivity(now);
+		if (now - last < debounceMs) {
+			return;
 		}
+
+		last = now;
+		onActivity(now);
 	};
 
 	const disposables: vscode.Disposable[] = [

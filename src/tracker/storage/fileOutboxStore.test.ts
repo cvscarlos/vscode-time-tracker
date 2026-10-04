@@ -12,11 +12,11 @@ function tempDir(): string {
 	return fs.mkdtempSync(path.join(os.tmpdir(), 'nt-outbox-'));
 }
 
-function closeRecord(id: string): JournalRecord {
+function closeRecord(): JournalRecord {
 	return {
 		type: 'close',
 		segment: {
-			id,
+			id: 'seg-1',
 			instanceId: 'inst',
 			start: new Date(0).toISOString(),
 			end: new Date(60_000).toISOString(),
@@ -291,7 +291,7 @@ suite('FileOutboxStore', () => {
 	test('a segment is undelivered until delivered to every enabled destination', () => {
 		const dir = tempDir();
 		const store = new FileOutboxStore(dir, 'inst', () => new Date(1000));
-		store.append(closeRecord('seg-1'));
+		store.append(closeRecord());
 
 		assert.equal(store.listUndelivered(['solidtime', 'timetagger']).length, 1);
 
@@ -308,7 +308,7 @@ suite('FileOutboxStore', () => {
 	test('compact purges a segment only once delivered to all enabled destinations', () => {
 		const dir = tempDir();
 		const store = new FileOutboxStore(dir, 'inst', () => new Date(1000));
-		store.append(closeRecord('seg-1'));
+		store.append(closeRecord());
 
 		store.markDelivered('seg-1', 'timetagger');
 		store.compact(['solidtime', 'timetagger']);
@@ -337,7 +337,7 @@ suite('FileOutboxStore', () => {
 	test('a bare (pre-TimeTagger) tombstone is read as a solidtime delivery', () => {
 		const dir = tempDir();
 		const store = new FileOutboxStore(dir, 'inst', () => new Date(1000));
-		store.append(closeRecord('seg-1'));
+		store.append(closeRecord());
 		// simulate an old tombstone written before per-destination support
 		fs.writeFileSync(path.join(dir, 'delivered', 'seg-1'), '');
 

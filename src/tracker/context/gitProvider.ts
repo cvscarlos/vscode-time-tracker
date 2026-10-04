@@ -102,8 +102,5 @@ function normalizeRemote(url: string | undefined): string | undefined {
 		return undefined;
 	}
 	const match = url.match(/(?:@|:\/\/)([^/:]+)[/:]([^/]+)\/(.+?)(?:\.git)?$/);
-	if (!match) {
-		return undefined;
-	}
-	return `${match[1]}/${match[2]}/${match[3]}`;
+	return match ? `${match[1]}/${match[2]}/${match[3]}` : undefined;
 }

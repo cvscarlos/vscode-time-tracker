@@ -117,7 +117,7 @@ function watchRepository(
  * Catch up on commits made while the extension wasn't running, e.g. commits
  * from a terminal or another editor while VS Code was closed.
  */
-export async function backfillCommits(maxPerRepo?: number): Promise<CommitInfo[]> {
+export async function backfillCommits(maxPerRepo = 20): Promise<CommitInfo[]> {
 	try {
 		const extension = vscode.extensions.getExtension<{ getAPI(version: 1): GitApi }>('vscode.git');
 		if (!extension) {
@@ -134,7 +134,7 @@ export async function backfillCommits(maxPerRepo?: number): Promise<CommitInfo[]
 			}
 			const workspaceKey =
 				getGitInfo(repository.rootUri.fsPath).repositoryKey ?? repository.rootUri.toString();
-			const log = await repository.log({ maxEntries: maxPerRepo ?? 20 });
+			const log = await repository.log({ maxEntries: maxPerRepo });
 			for (const gitCommit of log) {
 				commits.push({
 					branch,

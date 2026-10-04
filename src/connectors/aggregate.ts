@@ -84,6 +84,7 @@ function buildBlock(segments: LocalSegment[], options: AggregateOptions): BuildR
 
 export function aggregate(segments: LocalSegment[], options: AggregateOptions): AggregateResult {
 	const groups = new Map<string, LocalSegment[]>();
+	// eslint-disable-next-line unicorn/prefer-group-by -- Map.groupBy is ES2024; tsconfig lib is ES2022
 	for (const segment of segments) {
 		const key = groupKey(segment);
 		const list = groups.get(key) ?? [];
