@@ -1,32 +1,52 @@
 import * as vscode from 'vscode';
 
-export function watchFocus(onFocus: (isFocused: boolean, now: number) => void): vscode.Disposable {
-	let focused = vscode.window.state.focused;
-	const report = (isFocused: boolean) => {
-		focused = isFocused;
-		onFocus(isFocused, Date.now());
+/**
+ * Tracks VS Code's raw window focus separately from the effective focus we report.
+ * After a window reload VS Code can report the window unfocused and send no event
+ * until focus moves again, so user input in an editor may correct it (`onUserInput`).
+ * The raw value must stay separate: the window state event also fires for `active`
+ * changes, still carrying the stale `focused=false`, and comparing that against the
+ * corrected value would flip us back to unfocused.
+ */
+export function focusTracker(isInitiallyFocused: boolean, report: (isFocused: boolean) => void) {
+	let isRawFocused = isInitiallyFocused;
+	let isEffectivelyFocused = isInitiallyFocused;
+	const set = (isFocused: boolean) => {
+		isEffectivelyFocused = isFocused;
+		report(isFocused);
 	};
-	report(focused);
+	set(isInitiallyFocused);
+	return {
+		onWindowState(isFocused: boolean) {
+			if (isFocused === isRawFocused) {
+				return;
+			}
+			isRawFocused = isFocused;
+			set(isFocused);
+		},
+		onUserInput() {
+			if (!isEffectivelyFocused) {
+				set(true);
+			}
+		},
+	};
+}
+
+export function watchFocus(onFocus: (isFocused: boolean, now: number) => void): vscode.Disposable {
+	const tracker = focusTracker(vscode.window.state.focused, (isFocused) =>
+		onFocus(isFocused, Date.now())
+	);
 
 	return vscode.Disposable.from(
-		// The window state event also fires for `active` changes; only a real focus
-		// change may reset the look-away timer.
-		vscode.window.onDidChangeWindowState((state) => {
-			if (state.focused !== focused) {
-				report(state.focused);
-			}
-		}),
-		// After a window reload VS Code can report the window unfocused and send no
-		// event until focus moves again. A keyboard/mouse selection change can only
-		// come from the user in this window (agent edits arrive as Command or
-		// undefined), so it corrects that stale state.
+		vscode.window.onDidChangeWindowState((state) => tracker.onWindowState(state.focused)),
+		// Keyboard/mouse selection changes come only from the user in this window;
+		// agent edits arrive as Command or undefined.
 		vscode.window.onDidChangeTextEditorSelection((event) => {
 			if (
-				!focused &&
-				(event.kind === vscode.TextEditorSelectionChangeKind.Keyboard ||
-					event.kind === vscode.TextEditorSelectionChangeKind.Mouse)
+				event.kind === vscode.TextEditorSelectionChangeKind.Keyboard ||
+				event.kind === vscode.TextEditorSelectionChangeKind.Mouse
 			) {
-				report(true);
+				tracker.onUserInput();
 			}
 		})
 	);
