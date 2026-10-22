@@ -21,6 +21,7 @@ class FakeConnector implements SolidtimeConnectorLike {
 	present = new Set<string>();
 	findProjectCalls = 0;
 	findTaskCalls = 0;
+	taskNames: string[] = [];
 	/** Set to make the next `createEntry` throw instead of succeeding. */
 	failNextEntryWith: ConnectorError | undefined;
 	async resolveMember() {
@@ -36,8 +37,9 @@ class FakeConnector implements SolidtimeConnectorLike {
 	async createProject() {
 		return 'proj-id';
 	}
-	async findTaskByName() {
+	async findTaskByName(_org: string, _project: string, name: string) {
 		this.findTaskCalls++;
+		this.taskNames.push(name);
 		return 'task-id';
 	}
 	async createTask() {
@@ -69,6 +71,21 @@ const block: DeliveryBlock = {
 };
 
 suite('SolidtimeDestination', () => {
+	test('a caller-supplied describe and marker prefix shape the created entry', async () => {
+		const connector = new FakeConnector();
+		const dest = new SolidtimeDestination(
+			connector,
+			new MappingStore(memMemento()),
+			'https://app.solidtime.io',
+			{ describe: () => 'www.reddit.com (*.reddit.com)', markerPrefix: 'chr' }
+		);
+		await dest.prepare(block.start);
+		await dest.deliver({ ...block, branch: 'Chrome' });
+		assert.equal(connector.entries[0].description, 'www.reddit.com (*.reddit.com)');
+		assert.equal(connector.entries[0].markerPrefix, 'chr');
+		assert.deepEqual(connector.taskNames, ['Chrome']);
+	});
+
 	test('deliver resolves project/task and creates an entry, returning its id', async () => {
 		const connector = new FakeConnector();
 		const dest = new SolidtimeDestination(

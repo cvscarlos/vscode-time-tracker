@@ -235,4 +235,41 @@ suite('SolidtimeConnector', () => {
 		assert.ok(markers.has('seg-1') && markers.has('seg-2'));
 		assert.equal(markers.size, 2);
 	});
+
+	test('entries marked by either extension count as present', async () => {
+		const f = fakeFetch({
+			'GET /api/v1/organizations/org-1/time-entries': {
+				status: 200,
+				body: { data: [{ description: 'x [vsc:a]' }, { description: 'y [chr:b]' }] },
+			},
+		});
+		const c = new SolidtimeConnector(base, 'tok', 'org-1', f);
+		const markers = await c.listEntryMarkers('org-1', 'mem-1', '2026-07-21T00:00:00.000Z');
+		assert.deepEqual(markers, new Set(['a', 'b']));
+	});
+
+	test('createEntry uses the chr marker when the entry asks for it', async () => {
+		let sent: any;
+		const f = (async (_input: any, init: any) => {
+			sent = JSON.parse(init.body);
+			return {
+				ok: true,
+				status: 201,
+				json: async () => ({ data: { id: 'entry-1' } }),
+				text: async () => JSON.stringify({ data: { id: 'entry-1' } }),
+			} as Response;
+		}) as unknown as typeof fetch;
+		const c = new SolidtimeConnector(base, 'tok', 'org-1', f);
+		await c.createEntry('org-1', 'mem-1', {
+			segmentId: 'seg-9',
+			start: '2026-07-21T09:00:00.000Z',
+			end: '2026-07-21T09:30:00.000Z',
+			projectId: 'p-1',
+			// eslint-disable-next-line unicorn/no-null -- EntryInput contract uses null for "no task"
+			taskId: null,
+			description: 'stackoverflow.com',
+			markerPrefix: 'chr',
+		});
+		assert.equal(sent.description, 'stackoverflow.com [chr:seg-9]');
+	});
 });
