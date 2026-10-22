@@ -71,9 +71,9 @@ async function currentMatch(rules: Rules): Promise<RuleMatch | undefined> {
 }
 
 const ICONS: Record<TrackerStatus, Record<string, string>> = {
-	tracking: { 16: 'icons/tracking-16.png', 32: 'icons/tracking-32.png' },
-	grace: { 16: 'icons/grace-16.png', 32: 'icons/grace-32.png' },
-	off: { 16: 'icons/off-16.png', 32: 'icons/off-32.png' },
+	tracking: { 16: '/icons/tracking-16.png', 32: '/icons/tracking-32.png' },
+	grace: { 16: '/icons/grace-16.png', 32: '/icons/grace-32.png' },
+	off: { 16: '/icons/off-16.png', 32: '/icons/off-32.png' },
 };
 
 async function showStatus(runtime: Runtime, now: number): Promise<void> {
