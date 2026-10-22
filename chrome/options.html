@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>Time Tracker nt</title>
+		<style>
+			body {
+				font:
+					14px system-ui,
+					sans-serif;
+				max-width: 720px;
+				margin: 24px auto;
+				padding: 0 16px;
+			}
+			label {
+				display: block;
+				margin: 16px 0 4px;
+				font-weight: 600;
+			}
+			textarea,
+			input {
+				width: 100%;
+				box-sizing: border-box;
+				padding: 6px;
+				font: inherit;
+			}
+			textarea {
+				font-family: ui-monospace, monospace;
+			}
+			small {
+				color: #666;
+			}
+			button {
+				margin-top: 16px;
+				padding: 6px 16px;
+			}
+			#message {
+				margin-left: 8px;
+			}
+			#syncError {
+				color: #b42318;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>Time Tracker nt</h1>
+		<form>
+			<label for="rules">Rules</label>
+			<small
+				>Project name → URL patterns. <code>*.</code> matches the domain and any subdomain;
+				<code>*</code> inside a label matches any text. Other sites are never tracked.</small
+			>
+			<textarea
+				id="rules"
+				rows="15"
+				spellcheck="false"
+				placeholder='{ "acme": ["*.reddit.com", "github.com/example-org/acme"] }'
+			></textarea>
+
+			<label for="apiUrl">SolidTime URL</label>
+			<input id="apiUrl" type="url" />
+
+			<label for="organizationId">SolidTime organization id</label>
+			<input id="organizationId" placeholder="Leave blank to use your first organization" />
+
+			<label for="token">SolidTime API token</label>
+			<input id="token" type="password" autocomplete="off" />
+
+			<button type="submit">Save</button><span id="message"></span>
+			<p id="syncError"></p>
+		</form>
+		<script type="module" src="dist/options.js"></script>
+	</body>
+</html>
