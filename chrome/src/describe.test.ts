@@ -45,3 +45,12 @@ test('a long site list is cut on an item boundary', () => {
 		assert.match(item, /^host-\d+\.reddit\.com \(\*\.reddit\.com\)$/);
 	}
 });
+
+test('the description plus the chr marker fits the 500-character SolidTime limit', () => {
+	// Short hosts fill the list right up to the cap, so the cap itself is what's tested.
+	const segments = Array.from({ length: 100 }, (_, index) =>
+		segment(`${index}.io`, `${index}.io`, 200 - index)
+	);
+	const marker = ` [chr:${crypto.randomUUID()}]`;
+	assert.ok(`${describeSites(segments)}${marker}`.length <= 500);
+});

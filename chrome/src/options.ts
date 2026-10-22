@@ -1,4 +1,5 @@
 import { parseRules } from './rules.ts';
+import { normalizeApiUrl } from './settings.ts';
 
 const DEFAULT_API_URL = 'https://app.solidtime.io';
 
@@ -39,7 +40,7 @@ form.addEventListener('submit', async (event) => {
 			return;
 		}
 	}
-	const url = apiUrl.value.trim() || DEFAULT_API_URL;
+	const url = normalizeApiUrl(apiUrl.value) || DEFAULT_API_URL;
 	if (!URL.canParse(url)) {
 		message.textContent = 'The SolidTime URL is not valid.';
 		return;

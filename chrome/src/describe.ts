@@ -1,13 +1,15 @@
 import type { ChromeSegment } from './tracker.ts';
 
 const ELLIPSIS = ', …';
+// SolidTime rejects descriptions over 500 characters; the connector appends ` [chr:<uuid>]`.
+const MARKER_LENGTH = ' [chr:]'.length + crypto.randomUUID().length;
+const DESCRIPTION_LIMIT = 500 - MARKER_LENGTH;
 
 /**
  * The SolidTime entry description: each host the time was spent on, most time
- * first, with its matched rule when that differs from the host. 480 leaves room
- * for the ` [chr:<uuid>]` marker the connector appends.
+ * first, with its matched rule when that differs from the host.
  */
-export function describeSites(segments: ChromeSegment[], maxLength = 480): string {
+export function describeSites(segments: ChromeSegment[], maxLength = DESCRIPTION_LIMIT): string {
 	const sites = new Map<string, { rule: string; ms: number }>();
 	for (const { host, rule, activeMilliseconds } of segments) {
 		const site = sites.get(host) ?? { rule, ms: 0 };

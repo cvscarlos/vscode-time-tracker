@@ -51,3 +51,21 @@ test('a segment leaves the outbox once delivered to every destination', async ()
 	const reloaded = new ChromeOutboxStore(await StorageCache.load(area));
 	assert.deepEqual(reloaded.listUndelivered(['solidtime']), []);
 });
+
+test('a failed storage write does not stop later writes from being saved', async () => {
+	const area = memoryArea();
+	const healthySet = area.set;
+	let isFull = true;
+	area.set = async (values) => {
+		if (isFull) {
+			throw new Error('QUOTA_BYTES quota exceeded');
+		}
+		await healthySet(values);
+	};
+	const cache = await StorageCache.load(area);
+	await assert.rejects(cache.update('first', 1));
+	isFull = false;
+	await cache.update('second', 2);
+	const reloaded = await StorageCache.load(area);
+	assert.equal(reloaded.get('second'), 2);
+});

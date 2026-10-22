@@ -29,7 +29,11 @@ export class StorageCache {
 	}
 
 	private async write(previous: Promise<void>, key: string, value: unknown): Promise<void> {
-		await previous;
+		try {
+			await previous;
+		} catch {
+			// An earlier failed write (e.g. quota) already rejected for its caller; later writes still go out.
+		}
 		await (value === undefined ? this.area.remove(key) : this.area.set({ [key]: value }));
 	}
 
