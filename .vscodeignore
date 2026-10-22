@@ -31,3 +31,4 @@ ARCHITECTURE.md
 # only images/icon.png needs to ship)
 images/*.svg
 images/og-banner.png
+chrome/**
