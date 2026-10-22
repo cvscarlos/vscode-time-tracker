@@ -21,6 +21,8 @@ export class StorageCache {
 
 	private readonly area: StorageArea;
 	private readonly items: Map<string, unknown>;
+	/** Keys whose latest value is not in storage yet, oldest first. */
+	private readonly unsaved = new Set<string>();
 	private writes: Promise<void> = Promise.resolve();
 
 	private constructor(area: StorageArea, items: Record<string, unknown>) {
@@ -28,31 +30,40 @@ export class StorageCache {
 		this.items = new Map(Object.entries(items));
 	}
 
-	private async write(previous: Promise<void>, key: string, value: unknown): Promise<void> {
+	// A failed key (e.g. storage quota) is retried before any later key is written, so
+	// tracker state never lands in storage ahead of the outbox segment it closed.
+	private async write(previous: Promise<void>, key: string): Promise<void> {
+		await previous;
+		this.unsaved.add(key);
 		try {
-			await previous;
-		} catch {
-			// An earlier failed write (e.g. quota) already rejected for its caller; later writes still go out.
+			for (const pending of this.unsaved) {
+				const value = this.items.get(pending);
+				await (value === undefined
+					? this.area.remove(pending)
+					: this.area.set({ [pending]: value }));
+				this.unsaved.delete(pending);
+			}
+		} catch (error) {
+			console.warn(`Storage write failed, retrying on the next write: ${(error as Error).message}`);
 		}
-		await (value === undefined ? this.area.remove(key) : this.area.set({ [key]: value }));
 	}
 
 	get<T>(key: string): T | undefined {
 		return this.items.get(key) as T | undefined;
 	}
 
-	/** `undefined` deletes the key. Writes are applied in call order. */
+	/** `undefined` deletes the key. Writes are applied in call order and never reject. */
 	update(key: string, value: unknown): Promise<void> {
 		if (value === undefined) {
 			this.items.delete(key);
 		} else {
 			this.items.set(key, value);
 		}
-		this.writes = this.write(this.writes, key, value);
+		this.writes = this.write(this.writes, key);
 		return this.writes;
 	}
 
-	/** Resolves once every write issued so far has reached storage. */
+	/** Resolves once every write issued so far has been attempted. */
 	flushed(): Promise<void> {
 		return this.writes;
 	}

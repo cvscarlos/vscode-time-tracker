@@ -119,49 +119,61 @@ async function runAfter(previous: Promise<void>, isHeartbeat: boolean): Promise<
 	}
 }
 
+// One run at a time: a slow backlog can outlast the 3-minute alarm, and two runs would
+// create the same entry twice before either records it as delivered.
+const syncing = { isRunning: false };
+
 async function sync(): Promise<void> {
-	const runtime = await ready;
-	const settings = await chrome.storage.local.get([
-		'settings:apiUrl',
-		'settings:organizationId',
-		'settings:token',
-	]);
-	const token = settings['settings:token'];
-	if (typeof token !== 'string' || token === '') {
-		return; // No token: keep tracking locally.
+	if (syncing.isRunning) {
+		return;
 	}
-	const apiUrl = (settings['settings:apiUrl'] as string | undefined) || DEFAULT_API_URL;
-	const organizationId = (settings['settings:organizationId'] as string | undefined) || undefined;
-	const destination = new SolidtimeDestination(
-		new SolidtimeConnector(apiUrl, token, organizationId),
-		new MappingStore(runtime.cache),
-		apiUrl,
-		{
-			markerPrefix: 'chr',
-			describe: (block) => describeSites(runtime.store.segmentsByIds(block.segmentIds)),
-		}
-	);
-	const engine = new SyncEngine({
-		store: runtime.store,
-		destinations: [destination],
-		now: () => Date.now(),
-		settleMs: SETTLE_MS,
-		mergeGapMs: MERGE_GAP_MS,
-		log: (message) => console.log(message),
-		onStatus: (_pending, hasError) => {
-			void chrome.storage.local.set({
-				'status:error': hasError
-					? 'Last sync failed. Open the service worker console for details.'
-					: '',
-			});
-		},
-	});
+	syncing.isRunning = true;
 	try {
-		await engine.runOnce();
-	} catch (error) {
-		console.error(error);
+		const runtime = await ready;
+		const settings = await chrome.storage.local.get([
+			'settings:apiUrl',
+			'settings:organizationId',
+			'settings:token',
+		]);
+		const token = settings['settings:token'];
+		if (typeof token !== 'string' || token === '') {
+			return; // No token: keep tracking locally.
+		}
+		const apiUrl = (settings['settings:apiUrl'] as string | undefined) || DEFAULT_API_URL;
+		const organizationId = (settings['settings:organizationId'] as string | undefined) || undefined;
+		const destination = new SolidtimeDestination(
+			new SolidtimeConnector(apiUrl, token, organizationId),
+			new MappingStore(runtime.cache),
+			apiUrl,
+			{
+				markerPrefix: 'chr',
+				describe: (block) => describeSites(runtime.store.segmentsByIds(block.segmentIds)),
+			}
+		);
+		const engine = new SyncEngine({
+			store: runtime.store,
+			destinations: [destination],
+			now: () => Date.now(),
+			settleMs: SETTLE_MS,
+			mergeGapMs: MERGE_GAP_MS,
+			log: (message) => console.log(message),
+			onStatus: (_pending, hasError) => {
+				void chrome.storage.local.set({
+					'status:error': hasError
+						? 'Last sync failed. Open the service worker console for details.'
+						: '',
+				});
+			},
+		});
+		try {
+			await engine.runOnce();
+		} catch (error) {
+			console.error(error);
+		}
+		await runtime.cache.flushed();
+	} finally {
+		syncing.isRunning = false;
 	}
-	await runtime.cache.flushed();
 }
 
 function scheduleAlarms(): void {

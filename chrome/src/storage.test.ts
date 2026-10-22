@@ -52,7 +52,7 @@ test('a segment leaves the outbox once delivered to every destination', async ()
 	assert.deepEqual(reloaded.listUndelivered(['solidtime']), []);
 });
 
-test('a failed storage write does not stop later writes from being saved', async () => {
+test('a failed write is retried, in order, by the next write', async () => {
 	const area = memoryArea();
 	const healthySet = area.set;
 	let isFull = true;
@@ -63,9 +63,36 @@ test('a failed storage write does not stop later writes from being saved', async
 		await healthySet(values);
 	};
 	const cache = await StorageCache.load(area);
-	await assert.rejects(cache.update('first', 1));
+	await cache.update('first', 1);
 	isFull = false;
 	await cache.update('second', 2);
 	const reloaded = await StorageCache.load(area);
+	assert.equal(reloaded.get('first'), 1);
 	assert.equal(reloaded.get('second'), 2);
+});
+
+test('tracker state is never saved ahead of an unsaved outbox write', async () => {
+	const area = memoryArea();
+	const healthySet = area.set;
+	let isOutboxFull = true;
+	area.set = async (values) => {
+		if (isOutboxFull && 'outbox:segments' in values) {
+			throw new Error('QUOTA_BYTES quota exceeded');
+		}
+		await healthySet(values);
+	};
+	const cache = await StorageCache.load(area);
+	new ChromeOutboxStore(cache).append({ type: 'close', segment });
+	await cache.update('tracker:state', { lastSeen: 1 });
+	const afterFailure = await StorageCache.load(area);
+	assert.equal(afterFailure.get('tracker:state'), undefined);
+
+	isOutboxFull = false;
+	await cache.update('tracker:state', { lastSeen: 2 });
+	const healed = await StorageCache.load(area);
+	assert.deepEqual(healed.get('tracker:state'), { lastSeen: 2 });
+	assert.deepEqual(
+		new ChromeOutboxStore(healed).listUndelivered(['solidtime']).map((s) => s.id),
+		['seg-1']
+	);
 });
