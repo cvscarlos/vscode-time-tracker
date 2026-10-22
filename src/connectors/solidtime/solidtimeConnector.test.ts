@@ -22,6 +22,25 @@ function fakeFetch(routes: Record<string, { status: number; body?: unknown }>): 
 const base = 'https://app.solidtime.io';
 
 suite('SolidtimeConnector', () => {
+	test('the default fetch is called unbound, as browsers and service workers require', async () => {
+		const original = globalThis.fetch;
+		// eslint-disable-next-line unicorn/no-global-object-property-assignment -- the default (global) fetch is what's under test
+		globalThis.fetch = async function (this: unknown) {
+			if (this !== undefined && this !== globalThis) {
+				throw new TypeError("Failed to execute 'fetch': Illegal invocation");
+			}
+			const body = { data: [{ id: 'mem-1', organization: { id: 'org-1' } }] };
+			return { ok: true, status: 200, text: async () => JSON.stringify(body) } as Response;
+		};
+		try {
+			const c = new SolidtimeConnector(base, 'tok', 'org-1');
+			assert.deepEqual(await c.resolveMember(), { organizationId: 'org-1', memberId: 'mem-1' });
+		} finally {
+			// eslint-disable-next-line unicorn/no-global-object-property-assignment -- restore the real fetch
+			globalThis.fetch = original;
+		}
+	});
+
 	test('resolveMember picks the configured org and uses membership.id as memberId', async () => {
 		const f = fakeFetch({
 			'GET /api/v1/users/me/memberships': {

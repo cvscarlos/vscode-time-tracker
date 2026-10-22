@@ -66,7 +66,8 @@ export class SolidtimeConnector implements SolidtimeConnectorLike {
 		private readonly organizationId: string | undefined,
 		fetchFn?: typeof fetch
 	) {
-		this.fetchFn = fetchFn ?? fetch;
+		// Called through a wrapper: browsers and service workers reject `fetch` bound to another object.
+		this.fetchFn = fetchFn ?? ((input, init) => fetch(input, init));
 	}
 
 	private async get<T>(path: string): Promise<T> {
