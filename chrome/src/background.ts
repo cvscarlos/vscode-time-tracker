@@ -128,7 +128,9 @@ async function sync(): Promise<void> {
 		return;
 	}
 	syncing.isRunning = true;
+	const result = { hasError: false };
 	try {
+		await chrome.action.setBadgeText({ text: '…' });
 		const runtime = await ready;
 		const settings = await chrome.storage.local.get([
 			'settings:apiUrl',
@@ -158,6 +160,7 @@ async function sync(): Promise<void> {
 			mergeGapMs: MERGE_GAP_MS,
 			log: (message) => console.log(message),
 			onStatus: (_pending, hasError) => {
+				result.hasError ||= hasError;
 				void chrome.storage.local.set({
 					'status:error': hasError
 						? 'Last sync failed. Open the service worker console for details.'
@@ -168,11 +171,13 @@ async function sync(): Promise<void> {
 		try {
 			await engine.runOnce();
 		} catch (error) {
+			result.hasError = true;
 			console.error(error);
 		}
 		await runtime.cache.flushed();
 	} finally {
 		syncing.isRunning = false;
+		await chrome.action.setBadgeText({ text: result.hasError ? '!' : '' });
 	}
 }
 
@@ -192,6 +197,10 @@ chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
 });
 chrome.windows.onFocusChanged.addListener(() => refresh());
 chrome.idle.onStateChanged.addListener(() => refresh());
+// Clicking the toolbar icon delivers whatever has settled, like VS Code's Sync Now.
+chrome.action.onClicked.addListener(() => {
+	void sync();
+});
 chrome.alarms.onAlarm.addListener((alarm) => {
 	if (alarm.name === 'sync') {
 		void sync();
