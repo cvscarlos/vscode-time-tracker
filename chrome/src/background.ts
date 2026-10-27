@@ -80,11 +80,12 @@ async function showStatus(runtime: Runtime, now: number): Promise<void> {
 	const status = runtime.tracker.status(now);
 	const open = runtime.tracker.snapshot().open;
 	await chrome.action.setIcon({ path: ICONS[status] });
+	const tracking =
+		status === 'off' || !open
+			? 'Time Tracker nt: not tracking'
+			: `Time Tracker nt: tracking ${open.match.project} (${open.match.host})`;
 	await chrome.action.setTitle({
-		title:
-			status === 'off' || !open
-				? 'Time Tracker nt: not tracking'
-				: `Time Tracker nt: tracking ${open.match.project} (${open.match.host})`,
+		title: lastSync.summary ? `${tracking}\n${lastSync.summary}` : tracking,
 	});
 	// Turn the icon off on time even if no other event wakes the worker.
 	if (status === 'grace' && open?.leftAt !== undefined) {
@@ -122,13 +123,15 @@ async function runAfter(previous: Promise<void>, isHeartbeat: boolean): Promise<
 // One run at a time: a slow backlog can outlast the 3-minute alarm, and two runs would
 // create the same entry twice before either records it as delivered.
 const syncing = { isRunning: false };
+/** The last sync's outcome, shown in the icon tooltip and on the options page. */
+const lastSync = { summary: '' };
 
 async function sync(): Promise<void> {
 	if (syncing.isRunning) {
 		return;
 	}
 	syncing.isRunning = true;
-	const result = { hasError: false };
+	const result = { sent: 0, waiting: 0, hasError: false, reason: '' };
 	try {
 		await chrome.action.setBadgeText({ text: '…' });
 		const runtime = await ready;
@@ -139,7 +142,10 @@ async function sync(): Promise<void> {
 		]);
 		const token = settings['settings:token'];
 		if (typeof token !== 'string' || token === '') {
-			return; // No token: keep tracking locally.
+			// No token: keep tracking locally, but say why nothing is sent.
+			result.hasError = true;
+			result.reason = 'add your SolidTime token in Options';
+			return;
 		}
 		const apiUrl = (settings['settings:apiUrl'] as string | undefined) || DEFAULT_API_URL;
 		const organizationId = (settings['settings:organizationId'] as string | undefined) || undefined;
@@ -158,26 +164,41 @@ async function sync(): Promise<void> {
 			now: () => Date.now(),
 			settleMs: SETTLE_MS,
 			mergeGapMs: MERGE_GAP_MS,
-			log: (message) => console.log(message),
+			log: (message) => {
+				console.log(message);
+				result.reason = message; // a failed run logs its reason last
+			},
 			onStatus: (_pending, hasError) => {
 				result.hasError ||= hasError;
-				void chrome.storage.local.set({
-					'status:error': hasError
-						? 'Last sync failed. Open the service worker console for details.'
-						: '',
-				});
+			},
+			onDelivered: () => {
+				result.sent += 1;
 			},
 		});
 		try {
 			await engine.runOnce();
 		} catch (error) {
 			result.hasError = true;
+			result.reason = String(error);
 			console.error(error);
 		}
+		result.waiting = runtime.store.listUndelivered([destination.id]).length;
 		await runtime.cache.flushed();
 	} finally {
 		syncing.isRunning = false;
-		await chrome.action.setBadgeText({ text: result.hasError ? '!' : '' });
+		const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+		lastSync.summary = result.hasError
+			? `Last sync ${time} failed: ${result.reason}`
+			: `Last sync ${time}: sent ${result.sent}, ${result.waiting} waiting to settle`;
+		await chrome.storage.local.set({ 'status:error': result.hasError ? lastSync.summary : '' });
+		await chrome.action.setBadgeBackgroundColor({ color: result.hasError ? '#D92D20' : '#2BB8A8' });
+		await chrome.action.setBadgeText({
+			text: result.hasError ? '!' : result.sent > 0 ? String(result.sent) : '✓',
+		});
+		if (!result.hasError) {
+			setTimeout(() => void chrome.action.setBadgeText({ text: '' }), 5000);
+		}
+		await showStatus(await ready, Date.now());
 	}
 }
 
