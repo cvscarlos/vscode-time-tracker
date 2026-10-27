@@ -27,6 +27,20 @@ function seg(
 }
 
 suite('aggregate', () => {
+	test("a gap holding another branch's time is not merged over, so entries never overlap", () => {
+		const { blocks } = aggregate(
+			[
+				seg('a1', '2026-07-21T16:00:00.000Z', '2026-07-21T16:01:00.000Z', 'a'),
+				seg('b', '2026-07-21T16:01:00.000Z', '2026-07-21T16:02:00.000Z', 'b'),
+				seg('a2', '2026-07-21T16:02:00.000Z', '2026-07-21T16:03:00.000Z', 'a'),
+			],
+			opts
+		);
+		const minutes = blocks.reduce((sum, block) => sum + block.focusMinutes + block.idleMinutes, 0);
+		assert.equal(minutes, 3);
+		assert.equal(blocks.length, 3);
+	});
+
 	test('merges two contiguous same-branch segments into one rounded block', () => {
 		// 16:19:10–16:21:05 and 16:21:05–16:21:40, both settled (ended > 5min before NOW)
 		const { blocks } = aggregate(

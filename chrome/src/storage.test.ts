@@ -96,3 +96,10 @@ test('tracker state is never saved ahead of an unsaved outbox write', async () =
 		['seg-1']
 	);
 });
+
+test('a segment closed twice under one id keeps its first saved record', async () => {
+	const store = new ChromeOutboxStore(await StorageCache.load(memoryArea()));
+	store.append({ type: 'close', segment });
+	store.append({ type: 'close', segment: { ...segment, end: '2026-10-22T10:01:00.000Z' } });
+	assert.deepEqual(store.segmentsByIds(['seg-1']), [segment]);
+});

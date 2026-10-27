@@ -93,7 +93,9 @@ export class ChromeOutboxStore implements Store {
 	}
 
 	append(record: JournalRecord): void {
-		if (record.type === 'close') {
+		// A restart between the outbox and tracker-state writes can close the same segment
+		// again from stale state; the first saved record is the accurate one.
+		if (record.type === 'close' && this.segments.every((s) => s.id !== record.segment.id)) {
 			void this.cache.update(SEGMENTS_KEY, [...this.segments, record.segment as ChromeSegment]);
 		}
 	}
