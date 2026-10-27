@@ -45,12 +45,9 @@ form.addEventListener('submit', async (event) => {
 		message.textContent = 'The SolidTime URL is not valid.';
 		return;
 	}
-	// The default server is a static host permission; any other needs the user's OK.
+	// Chrome grants the default server at install; Firefox and custom servers need the user's OK.
 	const { origin } = new URL(url);
-	if (
-		origin !== DEFAULT_API_URL &&
-		!(await chrome.permissions.request({ origins: [`${origin}/*`] }))
-	) {
+	if (!(await chrome.permissions.request({ origins: [`${origin}/*`] }))) {
 		message.textContent = `Permission needed for ${origin}.`;
 		return;
 	}
