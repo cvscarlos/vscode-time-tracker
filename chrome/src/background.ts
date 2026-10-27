@@ -13,6 +13,8 @@ const MERGE_GAP_MS = 2 * 60_000;
 const DEFAULT_API_URL = 'https://app.solidtime.io';
 const STATE_KEY = 'tracker:state';
 const RULES_KEY = 'settings:rules';
+// Each browser gets its own SolidTime task; Chromium-based browsers share `Chrome`.
+const TASK_NAME = navigator.userAgent.includes('Firefox/') ? 'Firefox' : 'Chrome';
 
 interface Runtime {
 	cache: StorageCache;
@@ -39,6 +41,7 @@ async function init(): Promise<Runtime> {
 	const cache = await StorageCache.load(chrome.storage.local);
 	const store = new ChromeOutboxStore(cache);
 	const tracker = new TabTracker(cache.get<TrackerState>(STATE_KEY) ?? {}, {
+		taskName: TASK_NAME,
 		newId: () => crypto.randomUUID(),
 		onClose: (segment) => {
 			store.append({ type: 'close', segment });
