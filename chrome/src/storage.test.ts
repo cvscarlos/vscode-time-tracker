@@ -1,0 +1,89 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { ChromeOutboxStore, StorageCache, type StorageArea } from './storage.ts';
+import type { ChromeSegment } from './tracker.ts';
+
+function memoryArea(): StorageArea {
+	const items = new Map<string, unknown>();
+	return {
+		get: async () => Object.fromEntries(items),
+		set: async (values) => {
+			for (const [key, value] of Object.entries(values)) {
+				items.set(key, value);
+			}
+		},
+		remove: async (key) => {
+			items.delete(key);
+		},
+	};
+}
+
+const segment: ChromeSegment = {
+	id: 'seg-1',
+	instanceId: 'chrome',
+	start: '2026-10-22T10:00:00.000Z',
+	end: '2026-10-22T10:05:00.000Z',
+	activeMilliseconds: 300_000,
+	idleMilliseconds: 0,
+	workspaceKey: 'chrome:acme',
+	projectName: 'acme',
+	branch: 'Chrome',
+	syncState: 'pending',
+	host: 'www.reddit.com',
+	rule: '*.reddit.com',
+};
+
+test('a segment leaves the outbox once delivered to every destination', async () => {
+	const area = memoryArea();
+	const cache = await StorageCache.load(area);
+	const store = new ChromeOutboxStore(cache);
+	store.append({ type: 'close', segment });
+	assert.deepEqual(
+		store.listUndelivered(['solidtime']).map((s) => s.id),
+		['seg-1']
+	);
+	assert.deepEqual(store.segmentsByIds(['seg-1']), [segment]);
+
+	store.markDelivered('seg-1', 'solidtime');
+	store.compact(['solidtime']);
+	await cache.flushed();
+
+	const reloaded = new ChromeOutboxStore(await StorageCache.load(area));
+	assert.deepEqual(reloaded.listUndelivered(['solidtime']), []);
+});
+
+test('tracker state is never saved ahead of an unsaved outbox write', async () => {
+	const area = memoryArea();
+	const healthySet = area.set;
+	let isOutboxFull = true;
+	area.set = async (values) => {
+		if (isOutboxFull && 'outbox:segments' in values) {
+			throw new Error('QUOTA_BYTES quota exceeded');
+		}
+		await healthySet(values);
+	};
+	const cache = await StorageCache.load(area);
+	new ChromeOutboxStore(cache).append({ type: 'close', segment });
+	await cache.update('tracker:state', { lastSeen: 1 });
+	const afterFailure = await StorageCache.load(area);
+	assert.equal(afterFailure.get('tracker:state'), undefined);
+
+	isOutboxFull = false;
+	await cache.update('tracker:state', { lastSeen: 2 });
+	const healed = await StorageCache.load(area);
+	assert.deepEqual(healed.get('tracker:state'), { lastSeen: 2 });
+	assert.deepEqual(
+		new ChromeOutboxStore(healed).listUndelivered(['solidtime']).map((s) => s.id),
+		['seg-1']
+	);
+});
+
+test('a segment closed twice under one id keeps the longer record', async () => {
+	const store = new ChromeOutboxStore(await StorageCache.load(memoryArea()));
+	store.append({ type: 'close', segment });
+	store.append({ type: 'close', segment: { ...segment, end: '2026-10-22T10:01:00.000Z' } });
+	assert.deepEqual(store.segmentsByIds(['seg-1']), [segment]);
+	const longer = { ...segment, end: '2026-10-22T10:09:00.000Z' };
+	store.append({ type: 'close', segment: longer });
+	assert.deepEqual(store.segmentsByIds(['seg-1']), [longer]);
+});
