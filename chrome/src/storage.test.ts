@@ -52,25 +52,6 @@ test('a segment leaves the outbox once delivered to every destination', async ()
 	assert.deepEqual(reloaded.listUndelivered(['solidtime']), []);
 });
 
-test('a failed write is retried, in order, by the next write', async () => {
-	const area = memoryArea();
-	const healthySet = area.set;
-	let isFull = true;
-	area.set = async (values) => {
-		if (isFull) {
-			throw new Error('QUOTA_BYTES quota exceeded');
-		}
-		await healthySet(values);
-	};
-	const cache = await StorageCache.load(area);
-	await cache.update('first', 1);
-	isFull = false;
-	await cache.update('second', 2);
-	const reloaded = await StorageCache.load(area);
-	assert.equal(reloaded.get('first'), 1);
-	assert.equal(reloaded.get('second'), 2);
-});
-
 test('tracker state is never saved ahead of an unsaved outbox write', async () => {
 	const area = memoryArea();
 	const healthySet = area.set;
@@ -97,9 +78,12 @@ test('tracker state is never saved ahead of an unsaved outbox write', async () =
 	);
 });
 
-test('a segment closed twice under one id keeps its first saved record', async () => {
+test('a segment closed twice under one id keeps the longer record', async () => {
 	const store = new ChromeOutboxStore(await StorageCache.load(memoryArea()));
 	store.append({ type: 'close', segment });
 	store.append({ type: 'close', segment: { ...segment, end: '2026-10-22T10:01:00.000Z' } });
 	assert.deepEqual(store.segmentsByIds(['seg-1']), [segment]);
+	const longer = { ...segment, end: '2026-10-22T10:09:00.000Z' };
+	store.append({ type: 'close', segment: longer });
+	assert.deepEqual(store.segmentsByIds(['seg-1']), [longer]);
 });

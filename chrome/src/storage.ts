@@ -93,11 +93,20 @@ export class ChromeOutboxStore implements Store {
 	}
 
 	append(record: JournalRecord): void {
-		// A restart between the outbox and tracker-state writes can close the same segment
-		// again from stale state; the first saved record is the accurate one.
-		if (record.type === 'close' && this.segments.every((s) => s.id !== record.segment.id)) {
-			void this.cache.update(SEGMENTS_KEY, [...this.segments, record.segment as ChromeSegment]);
+		if (record.type !== 'close') {
+			return;
 		}
+		// A restart between the outbox and tracker-state writes can close one segment twice
+		// (from stale or resumed state); the longer record holds all of its time.
+		const segment = record.segment as ChromeSegment;
+		const existing = this.segments.find((s) => s.id === segment.id);
+		if (existing && Date.parse(existing.end) >= Date.parse(segment.end)) {
+			return;
+		}
+		void this.cache.update(SEGMENTS_KEY, [
+			...this.segments.filter((s) => s.id !== segment.id),
+			segment,
+		]);
 	}
 
 	recover(): LocalSegment[] {

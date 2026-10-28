@@ -114,3 +114,11 @@ test('a tracker rebuilt from its snapshot continues the same open segment', () =
 	assert.equal(closed[0].id, 'seg-1');
 	assert.equal(ms(closed[0].start), 0);
 });
+
+test('a different rule on the same host starts a new segment, so each keeps its own rule', () => {
+	const { tracker, closed } = setup();
+	tracker.observe(reddit, t0);
+	tracker.observe({ ...reddit, rule: 'www.reddit.com/r/acme' }, t0 + 30_000);
+	assert.equal(closed.length, 1);
+	assert.equal(closed[0].rule, '*.reddit.com');
+});
