@@ -264,12 +264,12 @@ export class FileOutboxStore implements Store {
 	}
 
 	public isDelivered(segmentId: string, destinationId: string): boolean {
-		if (fs.existsSync(path.join(this.deliveredDir, `${segmentId}.${destinationId}`))) {
-			return true;
-		}
 		// Migration: a bare tombstone (no destination suffix) predates multi-backend
 		// support and represents a solidtime delivery.
-		return destinationId === 'solidtime' && fs.existsSync(path.join(this.deliveredDir, segmentId));
+		return (
+			fs.existsSync(path.join(this.deliveredDir, `${segmentId}.${destinationId}`)) ||
+			(destinationId === 'solidtime' && fs.existsSync(path.join(this.deliveredDir, segmentId)))
+		);
 	}
 }
 
