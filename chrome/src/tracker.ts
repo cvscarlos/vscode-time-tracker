@@ -74,7 +74,11 @@ export class TabTracker {
 	observe(match: RuleMatch | undefined, now: number): void {
 		this.settle(now);
 		const { open } = this.state;
-		if (open && match && isSameTarget(open.match, match)) {
+		const isSameTarget =
+			open?.match.project === match?.project &&
+			open?.match.host === match?.host &&
+			open?.match.rule === match?.rule;
+		if (open && match && isSameTarget) {
 			open.leftAt = undefined;
 		} else if (open && match) {
 			this.close(open.leftAt === undefined ? now : Math.min(now, open.leftAt + GRACE_MS));
@@ -106,8 +110,4 @@ export class TabTracker {
 	snapshot(): TrackerState {
 		return this.state;
 	}
-}
-
-function isSameTarget(a: RuleMatch, b: RuleMatch): boolean {
-	return a.project === b.project && a.host === b.host;
 }

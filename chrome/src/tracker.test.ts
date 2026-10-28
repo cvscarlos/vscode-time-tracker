@@ -123,3 +123,11 @@ test('closed segments are filed under the browser task given to the tracker', ()
 	tracker.observe(stackoverflow, t0 + 60_000);
 	assert.equal(closed[0].branch, 'Firefox');
 });
+
+test('a different rule on the same host starts a new segment, so each keeps its own rule', () => {
+	const { tracker, closed } = setup();
+	tracker.observe(reddit, t0);
+	tracker.observe({ ...reddit, rule: 'www.reddit.com/r/acme' }, t0 + 30_000);
+	assert.equal(closed.length, 1);
+	assert.equal(closed[0].rule, '*.reddit.com');
+});
