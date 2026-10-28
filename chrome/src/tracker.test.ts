@@ -11,12 +11,13 @@ const stackoverflow: RuleMatch = {
 	rule: 'stackoverflow.com',
 };
 
-function setup() {
+function setup(taskName = 'Chrome') {
 	const closed: ChromeSegment[] = [];
 	let n = 0;
 	const tracker = new TabTracker(
 		{},
 		{
+			taskName,
 			newId: () => `seg-${++n}`,
 			onClose: (segment) => {
 				closed.push(segment);
@@ -105,6 +106,7 @@ test('a tracker rebuilt from its snapshot continues the same open segment', () =
 	const persisted = JSON.stringify(tracker.snapshot());
 	const closed: ChromeSegment[] = [];
 	const revived = new TabTracker(JSON.parse(persisted), {
+		taskName: 'Chrome',
 		newId: () => 'other',
 		onClose: (segment) => {
 			closed.push(segment);
@@ -113,6 +115,13 @@ test('a tracker rebuilt from its snapshot continues the same open segment', () =
 	revived.observe(stackoverflow, t0 + 30_000);
 	assert.equal(closed[0].id, 'seg-1');
 	assert.equal(ms(closed[0].start), 0);
+});
+
+test('closed segments are filed under the browser task given to the tracker', () => {
+	const { tracker, closed } = setup('Firefox');
+	tracker.observe(reddit, t0);
+	tracker.observe(stackoverflow, t0 + 60_000);
+	assert.equal(closed[0].branch, 'Firefox');
 });
 
 test('a different rule on the same host starts a new segment, so each keeps its own rule', () => {

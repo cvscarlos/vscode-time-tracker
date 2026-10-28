@@ -20,6 +20,8 @@ export interface TrackerState {
 export type TrackerStatus = 'tracking' | 'grace' | 'off';
 
 interface TrackerDeps {
+	/** The SolidTime task every segment is filed under, e.g. `Chrome` or `Firefox`. */
+	taskName: string;
 	newId: () => string;
 	onClose: (segment: ChromeSegment) => void;
 }
@@ -61,7 +63,7 @@ export class TabTracker {
 			idleMilliseconds: 0,
 			workspaceKey: `chrome:${open.match.project}`,
 			projectName: open.match.project,
-			branch: 'Chrome',
+			branch: this.deps.taskName,
 			syncState: 'pending',
 			host: open.match.host,
 			rule: open.match.rule,
