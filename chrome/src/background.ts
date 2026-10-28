@@ -70,7 +70,8 @@ async function currentMatch(rules: Rules): Promise<RuleMatch | undefined> {
 		focused.type === 'normal'
 			? focused
 			: await chrome.windows.getLastFocused({ populate: true, windowTypes: ['normal'] });
-	return matchUrl(normal.tabs?.find((tab) => tab.active)?.url, rules);
+	const tab = normal.tabs?.find((t) => t.active);
+	return matchUrl(tab?.url, rules, tab?.title);
 }
 
 const ICONS: Record<TrackerStatus, Record<string, string>> = {
@@ -215,7 +216,8 @@ chrome.runtime.onInstalled.addListener(scheduleAlarms);
 chrome.runtime.onStartup.addListener(scheduleAlarms);
 chrome.tabs.onActivated.addListener(() => refresh());
 chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
-	if (changeInfo.url && tab.active) {
+	// Gmail and similar apps switch accounts or views by changing the title, not the URL.
+	if ((changeInfo.url || changeInfo.title) && tab.active) {
 		refresh();
 	}
 });
