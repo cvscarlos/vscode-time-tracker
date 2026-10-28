@@ -215,8 +215,8 @@ chrome.runtime.onInstalled.addListener(scheduleAlarms);
 chrome.runtime.onStartup.addListener(scheduleAlarms);
 chrome.tabs.onActivated.addListener(() => refresh());
 chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
-	// Gmail and similar apps switch accounts or views by changing the title, not the URL.
-	if ((changeInfo.url || changeInfo.title) && tab.active) {
+	// Some apps (e.g. webmail) switch accounts or views by changing only the title.
+	if ((changeInfo.url !== undefined || changeInfo.title !== undefined) && tab.active) {
 		refresh();
 	}
 });
