@@ -96,18 +96,6 @@ async function showStatus(runtime: Runtime, now: number): Promise<void> {
 	}
 }
 
-async function step(isHeartbeat: boolean): Promise<void> {
-	const runtime = await ready;
-	const match = await currentMatch(runtime.rules);
-	const now = Date.now();
-	if (isHeartbeat) {
-		runtime.tracker.heartbeat(now);
-	}
-	runtime.tracker.observe(match, now);
-	await runtime.cache.update(STATE_KEY, runtime.tracker.snapshot());
-	await showStatus(runtime, now);
-}
-
 // Events arrive concurrently; observing them out of order would credit the wrong tab.
 const serial = { tail: Promise.resolve() };
 function refresh(isHeartbeat = false): void {
@@ -117,7 +105,15 @@ function refresh(isHeartbeat = false): void {
 async function runAfter(previous: Promise<void>, isHeartbeat: boolean): Promise<void> {
 	await previous;
 	try {
-		await step(isHeartbeat);
+		const runtime = await ready;
+		const match = await currentMatch(runtime.rules);
+		const now = Date.now();
+		if (isHeartbeat) {
+			runtime.tracker.heartbeat(now);
+		}
+		runtime.tracker.observe(match, now);
+		await runtime.cache.update(STATE_KEY, runtime.tracker.snapshot());
+		await showStatus(runtime, now);
 	} catch (error) {
 		console.error(error);
 	}
@@ -169,7 +165,10 @@ async function sync(): Promise<void> {
 			mergeGapMs: MERGE_GAP_MS,
 			log: (message) => {
 				console.log(message);
-				result.reason = message; // a failed run logs its reason last
+				// Keep the failure, not a later success from another project.
+				if (!message.includes(' delivered ')) {
+					result.reason = message;
+				}
 			},
 			onStatus: (_pending, hasError) => {
 				result.hasError ||= hasError;

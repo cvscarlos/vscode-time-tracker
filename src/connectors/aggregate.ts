@@ -102,16 +102,18 @@ export function aggregate(segments: LocalSegment[], options: AggregateOptions): 
 		for (const segment of sorted) {
 			const startMs = Date.parse(segment.start);
 			// Never bridge a gap that holds another group's time: both entries would cover it.
-			const isGapTakenElsewhere = segments.some(
-				(other) =>
-					groupKey(other) !== key &&
-					Date.parse(other.start) < startMs &&
-					Date.parse(other.end) > currentEndMs
-			);
+			// Checked last, so the scan only runs when a merge is otherwise possible.
 			if (
-				!isGapTakenElsewhere &&
 				current.length > 0 &&
-				startMs - currentEndMs <= options.mergeGapMs
+				startMs - currentEndMs <= options.mergeGapMs &&
+				segments.every(
+					(other) =>
+						!(
+							groupKey(other) !== key &&
+							Date.parse(other.start) < startMs &&
+							Date.parse(other.end) > currentEndMs
+						)
+				)
 			) {
 				current.push(segment);
 			} else {
