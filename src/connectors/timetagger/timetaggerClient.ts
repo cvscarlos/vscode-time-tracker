@@ -67,8 +67,8 @@ export class TimetaggerClient {
 			);
 		}
 		const accepted = new Set(result.accepted);
-		const unacknowledged = records.some((record) => !accepted.has(record.key));
-		if (unacknowledged) {
+		const hasUnacknowledged = records.some((record) => !accepted.has(record.key));
+		if (hasUnacknowledged) {
 			// A 2xx with no failures/errors but a submitted key missing from
 			// `accepted` is unconfirmed, not rejected — retry rather than mark it
 			// delivered and lose it.
