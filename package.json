@@ -115,7 +115,8 @@
 		"package": "vsce package --out tmp/",
 		"chrome:typecheck": "tsc -p chrome",
 		"chrome:test": "node --test chrome/src/*.test.ts",
-		"chrome:build": "npm run chrome:typecheck && esbuild chrome/src/background.ts chrome/src/options.ts --bundle --format=esm --target=chrome120 --outdir=chrome/dist"
+		"chrome:build": "npm run chrome:typecheck && esbuild chrome/src/background.ts chrome/src/options.ts --bundle --format=esm --target=chrome120 --outdir=chrome/dist",
+		"chrome:zip": "npm run chrome:build && mkdir -p tmp && rm -f tmp/time-tracker-chrome.zip && cd chrome && zip -qr ../tmp/time-tracker-chrome.zip manifest.json options.html icons dist"
 	},
 	"devDependencies": {
 		"@types/chrome": "^0.3.6",
