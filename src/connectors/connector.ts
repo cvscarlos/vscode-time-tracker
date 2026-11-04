@@ -4,7 +4,8 @@ export interface EntryInput {
 	end: string; // ISO
 	projectId: string | null;
 	taskId: string | null;
-	description: string; // WITHOUT the marker; connector appends [vsc:<segmentId>]
+	description: string; // WITHOUT the marker; connector appends [<markerPrefix>:<segmentId>]
+	markerPrefix?: MarkerPrefix;
 }
 
 export class ConnectorError extends Error {
@@ -17,8 +18,11 @@ export class ConnectorError extends Error {
 	}
 }
 
-export function markerFor(segmentId: string): string {
-	return `[vsc:${segmentId}]`;
+/** Which extension created an entry: VS Code (`vsc`) or Chrome (`chr`). */
+export type MarkerPrefix = 'vsc' | 'chr';
+
+export function markerFor(segmentId: string, prefix: MarkerPrefix = 'vsc'): string {
+	return `[${prefix}:${segmentId}]`;
 }
 
 /** Focus-vs-idle suffix for a delivered entry's description, e.g. ` (14m focus, 3m idle)`.

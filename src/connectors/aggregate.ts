@@ -93,14 +93,28 @@ export function aggregate(segments: LocalSegment[], options: AggregateOptions): 
 	}
 
 	const results: BuildResult[] = [];
-	for (const list of groups.values()) {
+	for (const [key, list] of groups) {
 		// eslint-disable-next-line unicorn/no-array-sort -- freshly derived array copy, safe to mutate in place
 		const sorted = [...list].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
 
 		let current: LocalSegment[] = [];
 		let currentEndMs = 0;
 		for (const segment of sorted) {
-			if (current.length > 0 && Date.parse(segment.start) - currentEndMs <= options.mergeGapMs) {
+			const startMs = Date.parse(segment.start);
+			// Never bridge a gap that holds another group's time: both entries would cover it.
+			// Checked last, so the scan only runs when a merge is otherwise possible.
+			if (
+				current.length > 0 &&
+				startMs - currentEndMs <= options.mergeGapMs &&
+				segments.every(
+					(other) =>
+						!(
+							groupKey(other) !== key &&
+							Date.parse(other.start) < startMs &&
+							Date.parse(other.end) > currentEndMs
+						)
+				)
+			) {
 				current.push(segment);
 			} else {
 				if (current.length > 0) {

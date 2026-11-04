@@ -13,3 +13,4 @@ tmp/
 .env
 Desktop.ini
 Thumbs.db
+chrome/dist/

@@ -5,7 +5,7 @@ import {
 	TimeDestination,
 	TitleCtx,
 } from '../destination';
-import { ConnectorError, EntryInput } from '../connector';
+import { ConnectorError, EntryInput, MarkerPrefix } from '../connector';
 import { MappingStore } from '../mappingStore';
 
 export interface SolidtimeConnectorLike {
@@ -27,6 +27,12 @@ export interface SolidtimeConnectorLike {
 	): Promise<void>;
 }
 
+export interface SolidtimeDestinationOptions {
+	/** Builds the entry description; defaults to the task (branch) or project name. */
+	describe?: (block: DeliveryBlock) => string;
+	markerPrefix?: MarkerPrefix;
+}
+
 export class SolidtimeDestination implements TimeDestination {
 	private organizationId = '';
 	private memberId = '';
@@ -37,7 +43,8 @@ export class SolidtimeDestination implements TimeDestination {
 	constructor(
 		private readonly connector: SolidtimeConnectorLike,
 		private readonly mappings: MappingStore,
-		private readonly apiUrl: string
+		private readonly apiUrl: string,
+		private readonly options: SolidtimeDestinationOptions = {}
 	) {}
 
 	/**
@@ -104,7 +111,10 @@ export class SolidtimeDestination implements TimeDestination {
 			end: block.end,
 			projectId,
 			taskId,
-			description: `${block.branch ?? block.projectName}${breakdownSuffix(block.focusMinutes, block.idleMinutes)}`,
+			description:
+				this.options.describe?.(block) ??
+				`${block.branch ?? block.projectName}${breakdownSuffix(block.focusMinutes, block.idleMinutes)}`,
+			markerPrefix: this.options.markerPrefix,
 		};
 		try {
 			return await this.connector.createEntry(this.organizationId, this.memberId, entry);

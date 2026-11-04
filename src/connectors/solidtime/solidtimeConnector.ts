@@ -66,7 +66,8 @@ export class SolidtimeConnector implements SolidtimeConnectorLike {
 		private readonly organizationId: string | undefined,
 		fetchFn?: typeof fetch
 	) {
-		this.fetchFn = fetchFn ?? fetch;
+		// Called through a wrapper: browsers and service workers reject `fetch` bound to another object.
+		this.fetchFn = fetchFn ?? ((input, init) => fetch(input, init));
 	}
 
 	private async get<T>(path: string): Promise<T> {
@@ -174,7 +175,7 @@ export class SolidtimeConnector implements SolidtimeConnectorLike {
 			`/api/v1/organizations/${organizationId}/time-entries?member_id=${memberId}&start=${encodeURIComponent(toSolidtimeDate(sinceIso))}`
 		);
 		const markers = new Set<string>();
-		const re = /\[vsc:([^\]]+)\]/g;
+		const re = /\[(?:vsc|chr):([^\]]+)\]/g;
 		const entries = data.data ?? [];
 		for (const entry of entries) {
 			const description = entry.description ?? '';
@@ -186,7 +187,8 @@ export class SolidtimeConnector implements SolidtimeConnectorLike {
 	}
 
 	async createEntry(organizationId: string, memberId: string, entry: EntryInput): Promise<string> {
-		const description = `${entry.description} ${markerFor(entry.segmentId)}`.trim();
+		const description =
+			`${entry.description} ${markerFor(entry.segmentId, entry.markerPrefix)}`.trim();
 		const data = await this.post<{ data: { id?: string } }>(
 			`/api/v1/organizations/${organizationId}/time-entries`,
 			{

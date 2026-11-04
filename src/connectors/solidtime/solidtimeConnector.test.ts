@@ -22,6 +22,25 @@ function fakeFetch(routes: Record<string, { status: number; body?: unknown }>): 
 const base = 'https://app.solidtime.io';
 
 suite('SolidtimeConnector', () => {
+	test('the default fetch is called unbound, as browsers and service workers require', async () => {
+		const original = globalThis.fetch;
+		// eslint-disable-next-line unicorn/no-global-object-property-assignment -- the default (global) fetch is what's under test
+		globalThis.fetch = async function (this: unknown) {
+			if (this !== undefined && this !== globalThis) {
+				throw new TypeError("Failed to execute 'fetch': Illegal invocation");
+			}
+			const body = { data: [{ id: 'mem-1', organization: { id: 'org-1' } }] };
+			return { ok: true, status: 200, text: async () => JSON.stringify(body) } as Response;
+		};
+		try {
+			const c = new SolidtimeConnector(base, 'tok', 'org-1');
+			assert.deepEqual(await c.resolveMember(), { organizationId: 'org-1', memberId: 'mem-1' });
+		} finally {
+			// eslint-disable-next-line unicorn/no-global-object-property-assignment -- restore the real fetch
+			globalThis.fetch = original;
+		}
+	});
+
 	test('resolveMember picks the configured org and uses membership.id as memberId', async () => {
 		const f = fakeFetch({
 			'GET /api/v1/users/me/memberships': {
@@ -234,5 +253,42 @@ suite('SolidtimeConnector', () => {
 		const markers = await c.listEntryMarkers('org-1', 'mem-1', '2026-07-21T00:00:00.000Z');
 		assert.ok(markers.has('seg-1') && markers.has('seg-2'));
 		assert.equal(markers.size, 2);
+	});
+
+	test('entries marked by either extension count as present', async () => {
+		const f = fakeFetch({
+			'GET /api/v1/organizations/org-1/time-entries': {
+				status: 200,
+				body: { data: [{ description: 'x [vsc:a]' }, { description: 'y [chr:b]' }] },
+			},
+		});
+		const c = new SolidtimeConnector(base, 'tok', 'org-1', f);
+		const markers = await c.listEntryMarkers('org-1', 'mem-1', '2026-07-21T00:00:00.000Z');
+		assert.deepEqual(markers, new Set(['a', 'b']));
+	});
+
+	test('createEntry uses the chr marker when the entry asks for it', async () => {
+		let sent: any;
+		const f = (async (_input: any, init: any) => {
+			sent = JSON.parse(init.body);
+			return {
+				ok: true,
+				status: 201,
+				json: async () => ({ data: { id: 'entry-1' } }),
+				text: async () => JSON.stringify({ data: { id: 'entry-1' } }),
+			} as Response;
+		}) as unknown as typeof fetch;
+		const c = new SolidtimeConnector(base, 'tok', 'org-1', f);
+		await c.createEntry('org-1', 'mem-1', {
+			segmentId: 'seg-9',
+			start: '2026-07-21T09:00:00.000Z',
+			end: '2026-07-21T09:30:00.000Z',
+			projectId: 'p-1',
+			// eslint-disable-next-line unicorn/no-null -- EntryInput contract uses null for "no task"
+			taskId: null,
+			description: 'stackoverflow.com',
+			markerPrefix: 'chr',
+		});
+		assert.equal(sent.description, 'stackoverflow.com [chr:seg-9]');
 	});
 });
