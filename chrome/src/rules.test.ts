@@ -76,3 +76,25 @@ test('invalid JSON or a wrong shape is rejected', () => {
 	assert.throws(() => parseRules('{"p": "x"}'));
 	assert.throws(() => parseRules('[]'));
 });
+
+test('a rule object matches only when the tab title contains its text', () => {
+	const inboxes = parseRules(
+		JSON.stringify({
+			acme: [{ url: 'mail.google.com', title: 'you@acme.com' }],
+			contoso: [{ url: 'mail.google.com', title: 'you@contoso.com' }],
+		})
+	);
+	const url = 'https://mail.google.com/mail/u/1/#inbox';
+	assert.deepEqual(matchUrl(url, inboxes, 'Inbox (3) - YOU@CONTOSO.COM - Gmail'), {
+		project: 'contoso',
+		host: 'mail.google.com',
+		rule: 'mail.google.com + you@contoso.com',
+	});
+	assert.equal(matchUrl(url, inboxes, 'Inbox - someone@else.com - Gmail'), undefined);
+	assert.equal(matchUrl(url, inboxes), undefined);
+});
+
+test('a rule object needs a url and a title', () => {
+	assert.throws(() => parseRules('{"acme": [{"url": "mail.google.com"}]}'));
+	assert.throws(() => parseRules('{"acme": [{"url": "mail.google.com", "title": 3}]}'));
+});

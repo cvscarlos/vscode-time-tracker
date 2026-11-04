@@ -1,9 +1,11 @@
-export type Rules = { project: string; patterns: string[] }[];
+/** A URL pattern, or a URL pattern plus text the tab title must contain (e.g. a Gmail account). */
+export type RulePattern = string | { url: string; title: string };
+export type Rules = { project: string; patterns: RulePattern[] }[];
 
 export interface RuleMatch {
 	project: string;
 	host: string;
-	/** The pattern exactly as the user wrote it. */
+	/** The pattern as the user wrote it; a title rule reads `url + title`. */
 	rule: string;
 }
 
@@ -18,14 +20,24 @@ export function parseRules(json: string): Rules {
 		throw new Error('Rules must be a JSON object: { "project": ["pattern", ...] }');
 	}
 	return Object.entries(data).map(([project, patterns]) => {
-		if (!Array.isArray(patterns) || patterns.some((p) => typeof p !== 'string')) {
-			throw new Error(`Rules for "${project}" must be a list of pattern strings`);
+		if (!Array.isArray(patterns) || patterns.some((p) => !isRulePattern(p))) {
+			throw new Error(
+				`Rules for "${project}" must be a list of patterns: "url" or { "url": "...", "title": "..." }`
+			);
 		}
 		return { project, patterns };
 	});
 }
 
-export function matchUrl(url: string | undefined, rules: Rules): RuleMatch | undefined {
+function isRulePattern(value: unknown): value is RulePattern {
+	if (typeof value === 'string') {
+		return true;
+	}
+	const { url, title } = (value ?? {}) as Record<string, unknown>;
+	return typeof url === 'string' && typeof title === 'string' && title !== '';
+}
+
+export function matchUrl(url: string | undefined, rules: Rules, title = ''): RuleMatch | undefined {
 	if (!url || !URL.canParse(url)) {
 		return undefined;
 	}
@@ -34,10 +46,19 @@ export function matchUrl(url: string | undefined, rules: Rules): RuleMatch | und
 		return undefined;
 	}
 	const host = parsed.hostname.toLowerCase();
+	const lowerTitle = title.toLowerCase();
 	for (const { project, patterns } of rules) {
-		const rule = patterns.find((pattern) => isPatternMatch(pattern, parsed, host));
-		if (rule !== undefined) {
-			return { project, host, rule };
+		for (const pattern of patterns) {
+			if (typeof pattern === 'string') {
+				if (isPatternMatch(pattern, parsed, host)) {
+					return { project, host, rule: pattern };
+				}
+			} else if (
+				lowerTitle.includes(pattern.title.toLowerCase()) &&
+				isPatternMatch(pattern.url, parsed, host)
+			) {
+				return { project, host, rule: `${pattern.url} + ${pattern.title}` };
+			}
 		}
 	}
 	return undefined;

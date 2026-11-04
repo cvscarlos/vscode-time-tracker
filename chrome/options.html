@@ -48,7 +48,9 @@
 			<label for="rules">Rules</label>
 			<small
 				>Project name → URL patterns. <code>*.</code> matches the domain and any subdomain;
-				<code>*</code> inside a label matches any text. Other sites are never tracked.</small
+				<code>*</code> inside a label matches any text. Use
+				<code>{ "url": "mail.google.com", "title": "you@acme.com" }</code> to also require text in
+				the tab title. Other sites are never tracked.</small
 			>
 			<textarea
 				id="rules"
