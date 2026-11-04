@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { normalizeApiUrl } from './settings.ts';
+import { normalizeApiUrl, permissionPattern } from './settings.ts';
 
 test('the SolidTime URL is reduced to its base, like the VS Code setting', () => {
 	for (const typed of [
@@ -11,4 +11,9 @@ test('the SolidTime URL is reduced to its base, like the VS Code setting', () =>
 	]) {
 		assert.equal(normalizeApiUrl(typed), 'https://app.solidtime.io');
 	}
+});
+
+test('the host permission pattern leaves out the port, which Firefox patterns cannot match', () => {
+	assert.equal(permissionPattern('http://localhost:8080'), 'http://localhost/*');
+	assert.equal(permissionPattern('https://app.solidtime.io'), 'https://app.solidtime.io/*');
 });

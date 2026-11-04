@@ -1,5 +1,5 @@
 import { parseRules } from './rules.ts';
-import { normalizeApiUrl } from './settings.ts';
+import { normalizeApiUrl, permissionPattern } from './settings.ts';
 
 const DEFAULT_API_URL = 'https://app.solidtime.io';
 
@@ -45,13 +45,10 @@ form.addEventListener('submit', async (event) => {
 		message.textContent = 'The SolidTime URL is not valid.';
 		return;
 	}
-	// The default server is a static host permission; any other needs the user's OK.
-	const { origin } = new URL(url);
-	if (
-		origin !== DEFAULT_API_URL &&
-		!(await chrome.permissions.request({ origins: [`${origin}/*`] }))
-	) {
-		message.textContent = `Permission needed for ${origin}.`;
+	// Chrome grants the default server at install; Firefox and custom servers need the user's OK.
+	const pattern = permissionPattern(url);
+	if (!(await chrome.permissions.request({ origins: [pattern] }))) {
+		message.textContent = `Permission needed for ${pattern}.`;
 		return;
 	}
 	const values: Record<string, string> = {
