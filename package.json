@@ -115,8 +115,8 @@
 		"package": "vsce package --out tmp/",
 		"chrome:typecheck": "tsc -p chrome",
 		"chrome:test": "node --test chrome/src/*.test.ts",
-		"chrome:build": "npm run chrome:typecheck && esbuild chrome/src/background.ts chrome/src/options.ts --bundle --format=esm --target=chrome120 --outdir=chrome/dist",
-		"chrome:zip": "npm run chrome:build && mkdir -p tmp && rm -f tmp/time-tracker-chrome.zip && cd chrome && zip -qr ../tmp/time-tracker-chrome.zip manifest.json options.html icons dist"
+		"chrome:build": "npm run chrome:typecheck && node scripts/chrome-build.mjs",
+		"chrome:zip": "npm run chrome:typecheck && node scripts/chrome-build.mjs --zip"
 	},
 	"devDependencies": {
 		"@types/chrome": "^0.3.6",
@@ -133,6 +133,7 @@
 		"eslint-config-prettier": "^10.1.8",
 		"eslint-plugin-unicorn": "^79.0.0",
 		"prettier": "^3.9.10",
-		"typescript": "^6.0.3"
+		"typescript": "^6.0.3",
+		"yazl": "^2.5.1"
 	}
 }

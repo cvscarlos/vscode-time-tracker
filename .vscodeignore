@@ -32,3 +32,4 @@ ARCHITECTURE.md
 images/*.svg
 images/og-banner.png
 chrome/**
+scripts/**
