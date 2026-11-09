@@ -134,6 +134,6 @@
 		"eslint-plugin-unicorn": "^79.0.0",
 		"prettier": "^3.9.10",
 		"typescript": "^6.0.3",
-		"yazl": "^2.5.1"
+		"yazl": "^3.3.1"
 	}
 }
