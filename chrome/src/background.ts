@@ -78,16 +78,28 @@ const ICONS: Record<TrackerStatus, Record<string, string>> = {
 	tracking: { 16: '/icons/tracking-16.png', 32: '/icons/tracking-32.png' },
 	grace: { 16: '/icons/grace-16.png', 32: '/icons/grace-32.png' },
 	off: { 16: '/icons/off-16.png', 32: '/icons/off-32.png' },
+	paused: { 16: '/icons/paused-16.png', 32: '/icons/paused-32.png' },
 };
+
+const PAUSE_MENU: Record<string, { title: string; minutes: number }> = {
+	'pause-15': { title: 'Pause tracking for 15 minutes', minutes: 15 },
+	'pause-60': { title: 'Pause tracking for 1 hour', minutes: 60 },
+	resume: { title: 'Resume tracking', minutes: 0 },
+};
+
+const clock = (time: number) =>
+	new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 async function showStatus(runtime: Runtime, now: number): Promise<void> {
 	const status = runtime.tracker.status(now);
-	const open = runtime.tracker.snapshot().open;
+	const { open, pausedUntil } = runtime.tracker.snapshot();
 	await chrome.action.setIcon({ path: ICONS[status] });
 	const tracking =
-		status === 'off' || !open
-			? 'Time Tracker nt: not tracking'
-			: `Time Tracker nt: tracking ${open.match.project} (${open.match.host})`;
+		status === 'paused' && pausedUntil !== undefined
+			? `Time Tracker nt: paused until ${clock(pausedUntil)}`
+			: status === 'off' || !open
+				? 'Time Tracker nt: not tracking'
+				: `Time Tracker nt: tracking ${open.match.project} (${open.match.host})`;
 	await chrome.action.setTitle({
 		title: lastSync.summary ? `${tracking}\n${lastSync.summary}` : tracking,
 	});
@@ -95,15 +107,32 @@ async function showStatus(runtime: Runtime, now: number): Promise<void> {
 	if (status === 'grace' && open?.leftAt !== undefined) {
 		await chrome.alarms.create('grace', { when: open.leftAt + GRACE_MS });
 	}
+	if (status === 'paused' && pausedUntil !== undefined) {
+		await chrome.alarms.create('resume', { when: pausedUntil });
+	}
+	const isPaused = status === 'paused' && pausedUntil !== undefined;
+	try {
+		await chrome.contextMenus.update('resume', {
+			title: isPaused
+				? `Resume tracking (paused until ${clock(pausedUntil)})`
+				: PAUSE_MENU.resume.title,
+			enabled: isPaused,
+		});
+	} catch {
+		// The menu is rebuilt on install and startup; a refresh in between finds the item missing.
+	}
 }
 
 // Events arrive concurrently; observing them out of order would credit the wrong tab.
 const serial = { tail: Promise.resolve() };
-function refresh(isHeartbeat = false): void {
-	serial.tail = runAfter(serial.tail, isHeartbeat);
+function refresh(options: { isHeartbeat?: boolean; pauseMinutes?: number } = {}): void {
+	serial.tail = runAfter(serial.tail, options);
 }
 
-async function runAfter(previous: Promise<void>, isHeartbeat: boolean): Promise<void> {
+async function runAfter(
+	previous: Promise<void>,
+	{ isHeartbeat = false, pauseMinutes }: { isHeartbeat?: boolean; pauseMinutes?: number }
+): Promise<void> {
 	await previous;
 	try {
 		const runtime = await ready;
@@ -111,6 +140,9 @@ async function runAfter(previous: Promise<void>, isHeartbeat: boolean): Promise<
 		const now = Date.now();
 		if (isHeartbeat) {
 			runtime.tracker.heartbeat(now);
+		}
+		if (pauseMinutes !== undefined) {
+			runtime.tracker.pause(now + pauseMinutes * 60_000, now);
 		}
 		runtime.tracker.observe(match, now);
 		await runtime.cache.update(STATE_KEY, runtime.tracker.snapshot());
@@ -189,7 +221,7 @@ async function sync(): Promise<void> {
 		await runtime.cache.flushed();
 	} finally {
 		syncing.isRunning = false;
-		const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+		const time = clock(Date.now());
 		lastSync.summary = result.hasError
 			? `Last sync ${time} failed: ${result.reason}`
 			: `Last sync ${time}: sent ${result.sent}, ${result.waiting} waiting to settle`;
@@ -208,6 +240,11 @@ async function sync(): Promise<void> {
 function scheduleAlarms(): void {
 	void chrome.alarms.create('heartbeat', { periodInMinutes: 0.5 });
 	void chrome.alarms.create('sync', { periodInMinutes: 3 });
+	void chrome.contextMenus.removeAll().then(() => {
+		for (const [id, { title }] of Object.entries(PAUSE_MENU)) {
+			chrome.contextMenus.create({ id, title, contexts: ['action'] });
+		}
+	});
 	refresh();
 }
 
@@ -230,7 +267,14 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 	if (alarm.name === 'sync') {
 		void sync();
 	} else {
-		refresh(alarm.name === 'heartbeat');
+		refresh({ isHeartbeat: alarm.name === 'heartbeat' });
+	}
+});
+// Right-click the toolbar icon to pause; a pause ends by itself, or via Resume.
+chrome.contextMenus.onClicked.addListener(({ menuItemId }) => {
+	const item = PAUSE_MENU[String(menuItemId)];
+	if (item) {
+		refresh({ pauseMinutes: item.minutes });
 	}
 });
 chrome.storage.onChanged.addListener(async (changes, area) => {

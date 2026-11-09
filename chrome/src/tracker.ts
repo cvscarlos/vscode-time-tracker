@@ -15,9 +15,11 @@ export interface ChromeSegment extends LocalSegment {
 export interface TrackerState {
 	open?: { id: string; start: number; match: RuleMatch; leftAt?: number };
 	lastSeen?: number;
+	/** Matched tabs are ignored until this time, so it never counts. */
+	pausedUntil?: number;
 }
 
-export type TrackerStatus = 'tracking' | 'grace' | 'off';
+export type TrackerStatus = 'tracking' | 'grace' | 'off' | 'paused';
 
 interface TrackerDeps {
 	/** The SolidTime task every segment is filed under, e.g. `Chrome` or `Firefox`. */
@@ -73,6 +75,11 @@ export class TabTracker {
 	/** `match` is the rule-matched active tab of the focused window, or undefined (none, unfocused, locked). */
 	observe(match: RuleMatch | undefined, now: number): void {
 		this.settle(now);
+		this.state.lastSeen = now;
+		if (this.state.pausedUntil !== undefined && now < this.state.pausedUntil) {
+			return;
+		}
+		this.state.pausedUntil = undefined;
 		const { open } = this.state;
 		const isSameTarget =
 			open?.match.project === match?.project &&
@@ -88,6 +95,14 @@ export class TabTracker {
 		} else if (match) {
 			this.openSegment(match, now);
 		}
+	}
+
+	/** Ends the open segment now, without the grace, and stops counting until `until`; `now` resumes. */
+	pause(until: number, now: number): void {
+		this.settle(now);
+		const leftAt = this.state.open?.leftAt;
+		this.close(leftAt === undefined ? now : Math.min(now, leftAt + GRACE_MS));
+		this.state.pausedUntil = until > now ? until : undefined;
 		this.state.lastSeen = now;
 	}
 
@@ -97,6 +112,9 @@ export class TabTracker {
 	}
 
 	status(now: number): TrackerStatus {
+		if (this.state.pausedUntil !== undefined && now < this.state.pausedUntil) {
+			return 'paused';
+		}
 		const { open } = this.state;
 		if (!open) {
 			return 'off';

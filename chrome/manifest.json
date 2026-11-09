@@ -1,7 +1,7 @@
 {
 	"manifest_version": 3,
 	"name": "Time Tracker nt",
-	"version": "1.0.7",
+	"version": "1.0.8",
 	"description": "Tracks time on the sites you choose and sends it to SolidTime.",
 	"background": {
 		"service_worker": "dist/background.js",
@@ -21,7 +21,7 @@
 		"48": "icons/off-48.png",
 		"128": "icons/off-128.png"
 	},
-	"permissions": ["tabs", "idle", "storage", "alarms"],
+	"permissions": ["tabs", "idle", "storage", "alarms", "contextMenus"],
 	"host_permissions": ["https://app.solidtime.io/*"],
 	"optional_host_permissions": ["https://*/*", "http://*/*"],
 	"browser_specific_settings": {

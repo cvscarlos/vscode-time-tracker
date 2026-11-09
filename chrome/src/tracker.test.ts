@@ -131,3 +131,21 @@ test('a different rule on the same host starts a new segment, so each keeps its 
 	assert.equal(closed.length, 1);
 	assert.equal(closed[0].rule, '*.reddit.com');
 });
+
+test('a pause ends the segment at once and ignores matched tabs until it runs out', () => {
+	const { tracker, closed } = setup();
+	tracker.observe(reddit, t0);
+	tracker.pause(t0 + 60 * 60_000, t0 + 10_000);
+	tracker.observe(reddit, t0 + 30 * 60_000);
+	assert.equal(tracker.status(t0 + 30 * 60_000), 'paused');
+	tracker.observe(reddit, t0 + 61 * 60_000);
+	tracker.observe(undefined, t0 + 62 * 60_000);
+	tracker.heartbeat(t0 + 63 * 60_000);
+	assert.deepEqual(
+		closed.map((segment) => [ms(segment.start), ms(segment.end)]),
+		[
+			[0, 10_000],
+			[61 * 60_000, 62 * 60_000 + 15_000],
+		]
+	);
+});
