@@ -277,6 +277,23 @@ suite('FileOutboxStore', () => {
 		);
 	});
 
+	test('compact drops an open that was never closed or checkpointed, keeping a live window open', () => {
+		const dir = tempDir();
+		// A window drops a segment shorter than the minimum without writing a close.
+		const closedWindow = new FileOutboxStore(dir, 'closed-window', yesterday);
+		closedWindow.append({ ...open('too-short'), start: '2026-07-20T09:00:00.000Z' });
+		closedWindow.append({ type: 'close', segment: seg('undelivered', 1000) });
+		const store = new FileOutboxStore(dir, 'inst', clock);
+		store.append({ ...open('live'), instanceId: 'inst' });
+
+		store.compact(['solidtime']);
+
+		const journal = (name: string) => fs.readFileSync(path.join(dir, name), 'utf8');
+		assert.ok(!journal('closed-window-2026-07-20.jsonl').includes('too-short'));
+		assert.ok(journal('closed-window-2026-07-20.jsonl').includes('undelivered'));
+		assert.ok(journal('inst-2026-07-21.jsonl').includes('live'));
+	});
+
 	test('compact tolerates a torn trailing line without throwing', () => {
 		const dir = tempDir();
 		const store = new FileOutboxStore(dir, 'inst', clock);

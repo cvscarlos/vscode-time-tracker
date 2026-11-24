@@ -1,7 +1,7 @@
 {
 	"manifest_version": 3,
 	"name": "Time Tracker nt",
-	"version": "1.0.8",
+	"version": "1.0.9",
 	"description": "Tracks time on the sites you choose and sends it to SolidTime.",
 	"background": {
 		"service_worker": "dist/background.js",

@@ -125,7 +125,7 @@ export class FileOutboxStore implements Store {
 	private readAllRecords(): JournalRecord[] {
 		const records: JournalRecord[] = [];
 		for (const name of this.journalFiles()) {
-			const content = fs.readFileSync(path.join(this.directory, name), 'utf8');
+			const content = readIfPresent(path.join(this.directory, name));
 			const lines = content.split('\n').filter((line) => line.trim() !== '');
 			for (const line of lines) {
 				try {
@@ -213,8 +213,31 @@ export class FileOutboxStore implements Store {
 	}
 
 	public compact(enabledIds: string[]): void {
-		const isSegmentFullyDelivered = (segmentId: string): boolean =>
-			this.isFullyDelivered(segmentId, enabledIds);
+		const records = this.readAllRecords();
+		const now = this.now().getTime();
+		// Keep what can still be delivered, plus opens a live window may yet close. An open
+		// that is neither was dropped below the minimum length without a close, and would
+		// otherwise stay on disk forever.
+		const keep = new Set(
+			reconstructSegments(records, { now, minActiveMs: this.minActiveMs })
+				.filter((segment) => !this.isFullyDelivered(segment.id, enabledIds))
+				.map((segment) => segment.id)
+		);
+		const closedIds = new Set<string>();
+		const lastWrite = new Map<string, number>();
+		for (const record of records) {
+			if (record.type === 'close') {
+				closedIds.add(record.segment.id);
+			} else {
+				const at = Date.parse(record.type === 'open' ? record.start : record.at);
+				lastWrite.set(record.id, Math.max(lastWrite.get(record.id) ?? 0, at));
+			}
+		}
+		for (const [id, at] of lastWrite) {
+			if (!closedIds.has(id) && now - at < STALE_OPEN_MS) {
+				keep.add(id);
+			}
+		}
 		// Rewrite files owned by this instance, plus any file dated before today.
 		// append() always targets today's file for the CURRENT instanceId, so a
 		// prior-date file — whichever instance wrote it — can never receive a new
@@ -232,23 +255,20 @@ export class FileOutboxStore implements Store {
 		});
 		for (const name of ownFiles) {
 			const full = path.join(this.directory, name);
-			const kept = fs
-				.readFileSync(full, 'utf8')
+			const kept = readIfPresent(full)
 				.split('\n')
 				.filter((line) => {
-					if (line.trim() === '') {
-						return false;
-					}
-					const segmentId = segmentIdOf(line);
-					return segmentId !== undefined && !isSegmentFullyDelivered(segmentId);
+					const segmentId = line.trim() === '' ? undefined : segmentIdOf(line);
+					return segmentId !== undefined && keep.has(segmentId);
 				});
 			if (kept.length === 0) {
 				this.tryRemove(full);
 			} else {
 				// Write atomically: a truncating write that crashes mid-flight
 				// would lose retained (undelivered) records. Rename is atomic on
-				// the same filesystem.
-				const tmp = `${full}.tmp`;
+				// the same filesystem. The temp name is per instance because
+				// windows syncing at once compact the same prior-date files.
+				const tmp = `${full}.${this.instanceId}.tmp`;
 				fs.writeFileSync(tmp, kept.join('\n') + '\n');
 				fs.renameSync(tmp, full);
 			}
@@ -277,6 +297,15 @@ export class FileOutboxStore implements Store {
 // extracted by anchoring to the trailing `-YYYY-MM-DD.jsonl` shape.
 function dateStampOf(filename: string): string | undefined {
 	return /-(\d{4}-\d{2}-\d{2})\.jsonl$/.exec(filename)?.[1];
+}
+
+/** Another window may compact a journal file away between listing and reading it. */
+function readIfPresent(file: string): string {
+	try {
+		return fs.readFileSync(file, 'utf8');
+	} catch {
+		return '';
+	}
 }
 
 function segmentIdOf(line: string): string | undefined {
